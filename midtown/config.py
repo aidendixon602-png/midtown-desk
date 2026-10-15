@@ -28,7 +28,7 @@ BOT_NAME = os.getenv("BOT_NAME", "Midtown Desk")
 SUPPORT_URL = os.getenv("SUPPORT_URL") or None          # invite link to your support server (optional)
 
 DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 # Feature modules loaded at startup (each file in cogs/)
 EXTENSIONS = ["cogs.events", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.dev"]

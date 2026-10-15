@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import time
 
 import discord
 
@@ -12,6 +13,29 @@ from .utils import log, rating_view, send_guild_log, slugify, ticket_controls, u
 
 # Channel IDs of open tickets, so activity tracking doesn't hit the database for every message
 open_channels: set[int] = set()
+
+# Anti-spam: seconds a member must wait between opening tickets in the same server
+TICKET_COOLDOWN = 60
+_last_opened: dict[tuple[int, int], float] = {}
+
+
+def cooldown_left(guild_id: int, user_id: int) -> int:
+    left = TICKET_COOLDOWN - (time.monotonic() - _last_opened.get((guild_id, user_id), -TICKET_COOLDOWN))
+    return int(left) + 1 if left > 0 else 0
+
+
+def start_cooldown(guild_id: int, user_id: int):
+    _last_opened[(guild_id, user_id)] = time.monotonic()
+
+
+async def set_claim_button(channel: discord.TextChannel, ticket, claimed_name: str | None):
+    """Update the Claim button on the ticket's welcome message."""
+    if not ticket["welcome_message_id"]:
+        return
+    try:
+        await channel.get_partial_message(ticket["welcome_message_id"]).edit(view=ticket_controls(claimed_name))
+    except discord.HTTPException:
+        pass
 
 
 def load_open_channels():
@@ -66,9 +90,15 @@ async def create_ticket(inter: discord.Interaction, cat, subject: str, details: 
     if details:
         e.add_field(name="Details", value=details[:1024], inline=False)
     e.set_footer(text=config.BOT_NAME)
-    await channel.send(content=user.mention + (f" {staff.mention}" if staff else ""), embed=e,
-                       view=ticket_controls(),
-                       allowed_mentions=discord.AllowedMentions(users=True, roles=True))
+    welcome = await channel.send(content=user.mention + (f" {staff.mention}" if staff else ""), embed=e,
+                                 view=ticket_controls(),
+                                 allowed_mentions=discord.AllowedMentions(users=True, roles=True))
+    db.run("UPDATE tickets SET welcome_message_id=? WHERE channel_id=?", (welcome.id, channel.id))
+    start_cooldown(guild.id, user.id)
+    try:
+        await welcome.pin(reason="Ticket info")
+    except discord.HTTPException:
+        pass
 
     le = discord.Embed(title=f"📥 Ticket #{number:04d} opened", color=config.GREEN, timestamp=utcnow())
     le.add_field(name="User", value=user.mention)

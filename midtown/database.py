@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS blacklist (
     added_at   TEXT,
     PRIMARY KEY (kind, target_id)
 );
+CREATE TABLE IF NOT EXISTS guild_blocks (
+    guild_id   INTEGER,
+    user_id    INTEGER,
+    reason     TEXT,
+    added_by   INTEGER,
+    added_at   TEXT,
+    PRIMARY KEY (guild_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS bot_state (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -65,6 +73,9 @@ CREATE INDEX IF NOT EXISTS idx_tickets_channel ON tickets(channel_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_owner ON tickets(guild_id, user_id, status);
 CREATE INDEX IF NOT EXISTS idx_categories_guild ON categories(guild_id);
 """
+
+# Columns added after v2.0. Existing databases get them automatically.
+MIGRATIONS = {"tickets": {"welcome_message_id": "INTEGER"}}
 
 CONFIG_COLUMNS = {"staff_role_id", "category_id", "log_channel_id", "ticket_limit",
                   "autoclose_hours", "dm_transcripts", "ask_rating"}
@@ -80,6 +91,11 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        for table, columns in MIGRATIONS.items():
+            existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            for col, decl in columns.items():
+                if col not in existing:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
         self.conn.commit()
 
     # ---- raw helpers ----
@@ -122,7 +138,7 @@ class DB:
         return self.config(guild_id)["counter"]
 
     def delete_guild_data(self, guild_id: int):
-        for table in ("guilds", "categories", "panels", "tickets"):
+        for table in ("guilds", "categories", "panels", "tickets", "guild_blocks"):
             self.conn.execute(f"DELETE FROM {table} WHERE guild_id=?", (guild_id,))
         self.conn.commit()
 
@@ -158,6 +174,20 @@ class DB:
 
     def blacklist_all(self):
         return self.all("SELECT * FROM blacklist ORDER BY added_at DESC")
+
+    # ---- per-server ticket blocks (set by that server's staff) ----
+    def guild_block(self, guild_id: int, user_id: int):
+        return self.one("SELECT * FROM guild_blocks WHERE guild_id=? AND user_id=?", (guild_id, user_id))
+
+    def guild_block_add(self, guild_id: int, user_id: int, reason: str | None, added_by: int):
+        self.run("INSERT OR REPLACE INTO guild_blocks(guild_id, user_id, reason, added_by, added_at) VALUES(?,?,?,?,?)",
+                 (guild_id, user_id, reason, added_by, dt.datetime.now(dt.timezone.utc).isoformat()))
+
+    def guild_block_remove(self, guild_id: int, user_id: int) -> bool:
+        return self.run("DELETE FROM guild_blocks WHERE guild_id=? AND user_id=?", (guild_id, user_id)).rowcount > 0
+
+    def guild_blocks(self, guild_id: int):
+        return self.all("SELECT * FROM guild_blocks WHERE guild_id=? ORDER BY added_at DESC", (guild_id,))
 
     # ---- bot-wide state (maintenance mode, custom status) ----
     def get_state(self, key: str, default: str | None = None) -> str | None:

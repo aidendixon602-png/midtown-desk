@@ -9,9 +9,10 @@ from discord.ext import commands, tasks
 
 from midtown import config
 from midtown.database import db
-from midtown.tickets import close_ticket, create_ticket, mark_channel_gone, open_channels
+from midtown.tickets import (close_ticket, cooldown_left, create_ticket, mark_channel_gone, open_channels,
+                             set_claim_button)
 from midtown.utils import (gatekeep, is_staff, log, panel_view, report_error, reply, send_guild_log, slugify,
-                           ticket_controls, utcnow)
+                           static_view, unix, utcnow)
 
 
 class OpenTicketModal(discord.ui.Modal):
@@ -95,6 +96,8 @@ class Tickets(commands.Cog):
                 await self.handle_close(inter)
             elif cid.startswith("md:rate:"):
                 await self.handle_rate(inter, cid)
+            elif cid in ("md:creq:yes", "md:creq:no"):
+                await self.handle_close_request(inter, accepted=cid.endswith("yes"))
         except Exception as error:
             code = await report_error(self.bot, error, f"button `{cid}` in {inter.guild_id}")
             try:
@@ -114,6 +117,13 @@ class Tickets(commands.Cog):
         cat = db.one("SELECT * FROM categories WHERE id=? AND guild_id=?", (int(values[0]), inter.guild.id))
         if not cat:
             return await reply(inter, "That ticket type was removed. Please pick another.")
+        block = db.guild_block(inter.guild.id, inter.user.id)
+        if block:
+            return await reply(inter, "⛔ You've been blocked from opening tickets in this server."
+                               + (f"\n**Reason:** {block['reason']}" if block["reason"] else ""))
+        wait = cooldown_left(inter.guild.id, inter.user.id)
+        if wait:
+            return await reply(inter, f"You just opened a ticket. Please wait {wait}s before opening another.")
         rows = db.open_tickets_for(inter.guild.id, inter.user.id)
         if len(rows) >= cfg["ticket_limit"]:
             links = ", ".join(f"<#{r['channel_id']}>" for r in rows)
@@ -128,15 +138,48 @@ class Tickets(commands.Cog):
             return await reply(inter, "Only staff can claim tickets.")
         if ticket["claimed_by"]:
             return await reply(inter, f"Already claimed by <@{ticket['claimed_by']}>.")
+        await inter.response.defer()
+        await self.set_claim(inter, ticket, inter.user)
 
-        db.run("UPDATE tickets SET claimed_by=? WHERE id=?", (inter.user.id, ticket["id"]))
-        await inter.response.edit_message(view=ticket_controls(inter.user.display_name))
-        await inter.channel.send(embed=discord.Embed(
-            description=f"🙋 {inter.user.mention} claimed this ticket and will be helping you.", color=config.GREEN))
-        le = discord.Embed(title=f"🙋 Ticket #{ticket['number']:04d} claimed", color=config.YELLOW, timestamp=utcnow())
-        le.add_field(name="Staff", value=inter.user.mention)
+    async def set_claim(self, inter: discord.Interaction, ticket, member: discord.Member | None):
+        """Claim (member), transfer (member, already claimed) or unclaim (None) a ticket."""
+        previous = ticket["claimed_by"]
+        db.run("UPDATE tickets SET claimed_by=? WHERE id=?", (member.id if member else None, ticket["id"]))
+        await set_claim_button(inter.channel, ticket, member.display_name if member else None)
+
+        if member is None:
+            text, title, color = f"↩️ {inter.user.mention} unclaimed this ticket. Any staff member can pick it up.", \
+                "unclaimed", config.GREY
+        elif previous:
+            text, title, color = f"🔁 This ticket was transferred to {member.mention}.", "transferred", config.YELLOW
+        else:
+            text, title, color = f"🙋 {member.mention} claimed this ticket and will be helping you.", "claimed", \
+                config.GREEN
+        await inter.channel.send(embed=discord.Embed(description=text, color=color))
+
+        le = discord.Embed(title=f"🙋 Ticket #{ticket['number']:04d} {title}", color=config.YELLOW, timestamp=utcnow())
+        if previous:
+            le.add_field(name="From", value=f"<@{previous}>")
+        le.add_field(name="To" if previous else "Staff", value=member.mention if member else "Nobody")
+        le.add_field(name="By", value=inter.user.mention)
         le.add_field(name="Channel", value=inter.channel.mention)
         await send_guild_log(inter.guild, le)
+
+    async def handle_close_request(self, inter: discord.Interaction, accepted: bool):
+        ticket = db.open_ticket(inter.channel_id)
+        if not ticket:
+            return await inter.response.edit_message(view=None)
+        if inter.user.id != ticket["user_id"] and not is_staff(inter.user, db.config(inter.guild_id)):
+            return await reply(inter, "Only the person who opened this ticket can answer this.")
+        if not accepted:
+            await inter.response.edit_message(
+                embed=discord.Embed(description=f"🔓 {inter.user.mention} wants to keep this ticket open.",
+                                    color=config.GREEN), view=None)
+            return
+        await inter.response.edit_message(
+            embed=discord.Embed(description=f"✅ {inter.user.mention} accepted the close request.",
+                                color=config.GREEN), view=None)
+        await close_ticket(self.bot, inter.guild, inter.channel, ticket, inter.user, "Accepted a close request")
 
     async def handle_close(self, inter: discord.Interaction):
         ticket = db.open_ticket(inter.channel_id)
@@ -260,6 +303,123 @@ class Tickets(commands.Cog):
             return
         await reply(inter, "Closing ticket...")
         await close_ticket(self.bot, inter.guild, inter.channel, ticket, inter.user, reason or "No reason given")
+
+    @ticket.command(name="claim", description="Claim this ticket")
+    async def ticket_claim(self, inter: discord.Interaction):
+        ticket = await self._require_ticket(inter)
+        if not ticket:
+            return
+        if ticket["claimed_by"]:
+            return await reply(inter, f"Already claimed by <@{ticket['claimed_by']}>. Use `/ticket transfer` instead.")
+        await reply(inter, "✅ Claimed.")
+        await self.set_claim(inter, ticket, inter.user)
+
+    @ticket.command(name="unclaim", description="Release this ticket so another staff member can take it")
+    async def ticket_unclaim(self, inter: discord.Interaction):
+        ticket = await self._require_ticket(inter)
+        if not ticket:
+            return
+        if not ticket["claimed_by"]:
+            return await reply(inter, "Nobody has claimed this ticket.")
+        if ticket["claimed_by"] != inter.user.id and not inter.user.guild_permissions.manage_guild:
+            return await reply(inter, "Only the staff member who claimed it (or an admin) can unclaim it.")
+        await reply(inter, "✅ Unclaimed.")
+        await self.set_claim(inter, ticket, None)
+
+    @ticket.command(name="transfer", description="Hand this ticket to another staff member")
+    @app_commands.describe(staff="Who should take over")
+    async def ticket_transfer(self, inter: discord.Interaction, staff: discord.Member):
+        ticket = await self._require_ticket(inter)
+        if not ticket:
+            return
+        if staff.bot or not is_staff(staff, db.config(inter.guild_id)):
+            return await reply(inter, f"{staff.mention} isn't on the staff team.")
+        if ticket["claimed_by"] == staff.id:
+            return await reply(inter, f"{staff.mention} already has this ticket.")
+        await reply(inter, f"✅ Transferred to {staff.mention}.")
+        await self.set_claim(inter, ticket, staff)
+
+    @ticket.command(name="closerequest", description="Ask the member if their issue is solved and the ticket can close")
+    @app_commands.describe(note="Optional message to the member")
+    async def ticket_closerequest(self, inter: discord.Interaction,
+                                  note: Optional[app_commands.Range[str, 1, 500]] = None):
+        ticket = await self._require_ticket(inter)
+        if not ticket:
+            return
+        e = discord.Embed(title="❓ Can we close this ticket?", color=config.YELLOW,
+                          description=(f"{note}\n\n" if note else "")
+                          + f"{inter.user.mention} thinks your issue is solved. Can we close this ticket?")
+        view = static_view(
+            discord.ui.Button(label="Yes, close it", style=discord.ButtonStyle.success, emoji="✅",
+                              custom_id="md:creq:yes"),
+            discord.ui.Button(label="No, I still need help", style=discord.ButtonStyle.secondary, emoji="❌",
+                              custom_id="md:creq:no"))
+        await reply(inter, "Close request sent.")
+        await inter.channel.send(content=f"<@{ticket['user_id']}>", embed=e, view=view)
+
+    @ticket.command(name="history", description="See a member's past tickets in this server")
+    async def ticket_history(self, inter: discord.Interaction, member: discord.Member):
+        if not is_staff(inter.user, db.config(inter.guild_id)):
+            return await reply(inter, "Only staff can see ticket history.")
+        rows = db.all("SELECT * FROM tickets WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 15",
+                      (inter.guild_id, member.id))
+        total = db.one("SELECT COUNT(*) c FROM tickets WHERE guild_id=? AND user_id=?",
+                       (inter.guild_id, member.id))["c"]
+        status_icon = {"open": "🟢", "closing": "🟡", "closed": "⚫"}
+        lines = []
+        for t in rows:
+            where = f"<#{t['channel_id']}>" if t["status"] == "open" else f"#{t['number']:04d}"
+            line = f"{status_icon.get(t['status'], '⚫')} {where} · {t['category']} · <t:{unix(t['opened_at'])}:R>"
+            if t["rating"]:
+                line += f" · {t['rating']}⭐"
+            if t["subject"]:
+                line += f"\n   {discord.utils.escape_markdown(t['subject'][:80])}"
+            lines.append(line)
+        e = discord.Embed(title=f"🗂️ Tickets from {member.display_name} ({total})", color=config.COLOR,
+                          description="\n".join(lines) or "No tickets yet.")
+        block = db.guild_block(inter.guild_id, member.id)
+        if block:
+            e.add_field(name="⛔ Blocked from tickets", value=block["reason"] or "No reason given")
+        e.set_thumbnail(url=member.display_avatar.url)
+        await reply(inter, embed=e)
+
+    @ticket.command(name="block", description="Stop a member from opening tickets in this server")
+    async def ticket_block(self, inter: discord.Interaction, member: discord.Member,
+                           reason: Optional[app_commands.Range[str, 1, 300]] = None):
+        cfg = db.config(inter.guild_id)
+        if not is_staff(inter.user, cfg):
+            return await reply(inter, "Only staff can block members.")
+        if member.bot or is_staff(member, cfg):
+            return await reply(inter, "You can't block bots or staff members.")
+        db.guild_block_add(inter.guild_id, member.id, reason, inter.user.id)
+        await reply(inter, f"⛔ {member.mention} can no longer open tickets here.")
+        le = discord.Embed(title="⛔ Member blocked from tickets", color=config.RED, timestamp=utcnow())
+        le.add_field(name="Member", value=member.mention)
+        le.add_field(name="By", value=inter.user.mention)
+        le.add_field(name="Reason", value=reason or "No reason given", inline=False)
+        await send_guild_log(inter.guild, le)
+
+    @ticket.command(name="unblock", description="Let a blocked member open tickets again")
+    async def ticket_unblock(self, inter: discord.Interaction, member: discord.User):
+        if not is_staff(inter.user, db.config(inter.guild_id)):
+            return await reply(inter, "Only staff can unblock members.")
+        if not db.guild_block_remove(inter.guild_id, member.id):
+            return await reply(inter, f"{member.mention} isn't blocked.")
+        await reply(inter, f"✅ {member.mention} can open tickets again.")
+        le = discord.Embed(title="✅ Member unblocked from tickets", color=config.GREEN, timestamp=utcnow())
+        le.add_field(name="Member", value=member.mention)
+        le.add_field(name="By", value=inter.user.mention)
+        await send_guild_log(inter.guild, le)
+
+    @ticket.command(name="blocked", description="List members blocked from opening tickets")
+    async def ticket_blocked(self, inter: discord.Interaction):
+        if not is_staff(inter.user, db.config(inter.guild_id)):
+            return await reply(inter, "Only staff can see this.")
+        rows = db.guild_blocks(inter.guild_id)
+        lines = [f"<@{r['user_id']}> — {r['reason'] or 'no reason'} (by <@{r['added_by']}>)" for r in rows[:30]]
+        await reply(inter, embed=discord.Embed(title=f"⛔ Blocked from tickets ({len(rows)})",
+                                               description="\n".join(lines) or "Nobody is blocked.",
+                                               color=config.RED))
 
 
 async def setup(bot: commands.Bot):

@@ -10,7 +10,9 @@ and each server gets its own settings, ticket types and ticket history.
 - Private ticket channels, **Claim** and **Close** buttons
 - HTML transcripts to the server's log channel and the member's DMs
 - 1–5 star ratings and a staff leaderboard
-- Open-ticket limit per member and auto-close for inactive tickets
+- Open-ticket limit per member, spam cooldown, and auto-close for inactive tickets
+- Claim, unclaim and transfer tickets; close requests the member confirms
+- Ticket history per member and per-server ticket blocks
 - Welcome message with setup steps when added to a new server
 - Developer tools: bot-wide stats, server list, blacklist, maintenance mode, broadcast, hot reload, backups
 
@@ -95,7 +97,19 @@ Use `/dev backup` regularly so you have a copy of your data.
 | `/settings` | Ticket limit, auto-close hours, DM transcripts, ratings |
 | `/stats` | Ticket stats and staff leaderboard |
 
-**Staff in a ticket:** Claim / Close buttons, `/ticket add` · `/ticket remove` · `/ticket rename` · `/ticket close`
+**Staff:**
+
+| Command | What it does |
+|---|---|
+| Claim / Close buttons | In every ticket. The welcome message is pinned |
+| `/ticket claim` · `unclaim` · `transfer` | Take a ticket, release it, or hand it to another staff member |
+| `/ticket add` · `remove` · `rename` | Manage who's in the ticket and its name |
+| `/ticket close` | Close with an optional reason |
+| `/ticket closerequest` | Ask the member if they're done. They confirm with a button |
+| `/ticket history` | A member's past tickets in this server |
+| `/ticket block` · `unblock` · `blocked` | Stop a member from opening tickets in your server |
+
+Members can only open a new ticket once every 60 seconds, to stop spam.
 
 **Developers only** (your dev server, your user ID):
 

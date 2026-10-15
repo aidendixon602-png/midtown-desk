@@ -27,7 +27,10 @@ class General(commands.Cog):
             "`/stats` — ticket stats and staff leaderboard"))
         e.add_field(name="Inside a ticket (staff)", inline=False, value=(
             "**Claim** / **Close** buttons\n"
-            "`/ticket add` · `/ticket remove` · `/ticket rename` · `/ticket close`"))
+            "`/ticket claim` · `unclaim` · `transfer` — who's handling it\n"
+            "`/ticket add` · `remove` · `rename` · `close` · `closerequest`\n"
+            "`/ticket history` — a member's past tickets\n"
+            "`/ticket block` · `unblock` · `blocked` — stop someone opening tickets"))
         e.add_field(name="Everyone", inline=False, value="`/help` · `/ping` · `/invite` · `/about`")
         e.set_footer(text=f"{config.BOT_NAME} v{config.VERSION}")
         await reply(inter, embed=e, view=link_buttons(self.bot))
