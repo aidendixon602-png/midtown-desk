@@ -73,11 +73,13 @@ def needs_auth(guild_id: int | None) -> bool:
 
 
 def first_writable_channel(guild: discord.Guild) -> discord.TextChannel | None:
-    if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
-        return guild.system_channel
+    if guild.system_channel:
+        perms = guild.system_channel.permissions_for(guild.me)
+        if perms.view_channel and perms.send_messages and perms.embed_links:
+            return guild.system_channel
     for channel in guild.text_channels:
         perms = channel.permissions_for(guild.me)
-        if perms.send_messages and perms.embed_links:
+        if perms.view_channel and perms.send_messages and perms.embed_links:
             return channel
     return None
 
@@ -214,7 +216,7 @@ async def send_guild_log(guild: discord.Guild, e: discord.Embed, data: bytes | N
     cfg = db.config(guild.id)
     channel = guild.get_channel(cfg["log_channel_id"]) if cfg["log_channel_id"] else None
     if not isinstance(channel, discord.TextChannel):
-        return
+        return False
     kwargs = {"embed": e}
     if data is not None:
         kwargs["file"] = discord.File(io.BytesIO(data), filename=filename)
@@ -222,6 +224,8 @@ async def send_guild_log(guild: discord.Guild, e: discord.Embed, data: bytes | N
         await channel.send(**kwargs)
     except discord.HTTPException as err:
         log.warning("Couldn't send guild log in %s: %s", guild.id, err)
+        return False
+    return True
 
 
 async def send_bot_log(bot: discord.Client, e: discord.Embed):
@@ -274,9 +278,9 @@ async def gatekeep(inter: discord.Interaction) -> bool:
         reason = f"🛠️ {config.BOT_NAME} is under maintenance. Please try again soon."
     if reason is None:
         return True
-    if inter.type != discord.InteractionType.autocomplete and not inter.response.is_done():
+    if inter.type != discord.InteractionType.autocomplete:
         try:
-            await inter.response.send_message(reason, ephemeral=True)
+            await reply(inter, reason)
         except discord.HTTPException:
             pass
     return False

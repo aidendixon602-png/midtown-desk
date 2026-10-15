@@ -87,6 +87,49 @@ They stay on Wispbyte.
 To update: push changes to GitHub, then restart the server (Auto Update pulls the new code).
 Use `/owner backup` regularly so you have a copy of your data.
 
+### If the bot is offline or commands do not work
+
+1. Use Python **3.10 or newer**, install with `python -m pip install -r requirements.txt`,
+   and start with `python main.py` from the repository directory. Keep only one running instance
+   per database; ticket creation locks coordinate interactions within that process.
+2. Set `DISCORD_TOKEN` on the host or in `.env`. An existing host environment variable takes
+   precedence over `.env`; update the host value too if a token was reset. Never post the token.
+3. Enable **Message Content Intent** under your application's **Bot** settings in Discord's
+   Developer Portal. The bot requests this intent for transcripts and owner text commands;
+   Discord disconnects it if the intent is not enabled/approved.
+4. Invite the bot with both `bot` and `applications.commands` scopes. If command registration
+   fails, the console now reports it and the bot still connects. The bot owner can DM
+   `,sync` to retry (replace `,` if `OWNER_PREFIX` was changed).
+5. With `REQUIRE_AUTH=true` (the default), approve the server before using `/setup`.
+   The bot owner can DM `,authorize SERVER_ID`. `/owner` appears in servers owned by the
+   bot's owner/developers; `DEV_GUILD_ID` can add another server. `DEV_IDS` is a trusted list
+   of bot developers, not the ticket staff role.
+6. Run `/setup` as a member with **Manage Server**, then give the configured staff role to
+   ticket staff. Check channel-specific permissions as well as the bot's server permissions.
+   `/settings` cannot use `@everyone` or a managed bot role as ticket staff.
+7. Closing a ticket needs **Read Message History**, **Manage Channels**, and a working
+   transcript destination with **Send Messages**, **Embed Links**, and **Attach Files**.
+   If neither the log channel nor the member's enabled transcript DM accepts the transcript
+   (including oversized attachments), the channel stays open for a safe retry.
+8. Read `logs/bot.log` for the error code shown in Discord. When requesting help, include
+   the failing command/button and relevant log lines with tokens and personal information removed.
+
+After merging an update, pull the new code on the host, reinstall requirements and restart.
+Keep the existing `.env` and persistent `data/` directory. Code changes in a pull request
+do not update a running bot automatically unless the host is configured to pull that branch.
+
+### Development checks
+
+```sh
+python -m pip install -r requirements.txt
+python -m compileall -q main.py midtown cogs tests
+python -m unittest discover -s tests -v
+```
+
+Tests use in-memory SQLite and mocked Discord requests; they do not log in to Discord or
+modify the host database. GitHub Actions runs the same checks on Python 3.10, 3.12 and 3.13.
+See [CHANGELOG.md](CHANGELOG.md) for the complete reliability update.
+
 ## Server authorization
 
 By default the bot only works in servers **you approve** (turn this off with `REQUIRE_AUTH=false`).

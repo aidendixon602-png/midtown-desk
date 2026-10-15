@@ -16,7 +16,7 @@ def _int(value: str | None) -> int | None:
     return int(value) if value.isdigit() else None
 
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip()
 
 # Developer setup
 DEV_IDS = _ids(os.getenv("DEV_IDS"))                    # your Discord user ID(s), comma separated
@@ -32,7 +32,7 @@ BOT_NAME = os.getenv("BOT_NAME", "Midtown Desk")
 SUPPORT_URL = os.getenv("SUPPORT_URL") or None          # invite link to your support server (optional)
 
 DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 
 # Feature modules loaded at startup (each file in cogs/)
 EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.owner", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports"]

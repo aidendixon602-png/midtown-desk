@@ -245,6 +245,7 @@ class OwnerCommands(app_commands.Group):
                         note: Optional[str] = None):
         gid = await self._id(inter, server_id, default_here=True)
         if gid:
+            await inter.response.defer(ephemeral=True, thinking=True)
             await reply(inter, await do_authorize(self.bot, gid, inter.user, note))
 
     @app_commands.command(name="revoke", description="Remove a server's approval")
@@ -252,6 +253,7 @@ class OwnerCommands(app_commands.Group):
     async def revoke(self, inter: discord.Interaction, server_id: str, leave: bool = False):
         gid = await self._id(inter, server_id)
         if gid:
+            await inter.response.defer(ephemeral=True, thinking=True)
             await reply(inter, await do_revoke(self.bot, gid, leave))
 
     @app_commands.command(name="servers", description="Every server the bot is in (✅ approved, 🔒 waiting)")
@@ -281,14 +283,17 @@ class OwnerCommands(app_commands.Group):
     async def leave(self, inter: discord.Interaction, server_id: str, block: bool = False):
         gid = await self._id(inter, server_id)
         if gid:
+            await inter.response.defer(ephemeral=True, thinking=True)
             await reply(inter, await do_leave(self.bot, gid, block))
 
     @app_commands.command(name="maintenance", description="Pause the bot for everyone except you")
     async def maintenance(self, inter: discord.Interaction, enabled: bool):
+        await inter.response.defer(ephemeral=True, thinking=True)
         await reply(inter, await set_maintenance(self.bot, enabled))
 
     @app_commands.command(name="status", description="Set the bot's status text (empty = reset)")
     async def status(self, inter: discord.Interaction, text: Optional[app_commands.Range[str, 1, 120]] = None):
+        await inter.response.defer(ephemeral=True, thinking=True)
         await reply(inter, await set_status(self.bot, text))
 
     @app_commands.command(name="block", description="Block a user from using the bot everywhere")
@@ -338,9 +343,10 @@ class Owner(commands.Cog):
         self.group = OwnerCommands(bot)
 
     async def cog_load(self):
-        asyncio.create_task(self.register_owner_servers())
+        self.registration_task = asyncio.create_task(self.register_owner_servers())
 
     async def cog_unload(self):
+        self.registration_task.cancel()
         for gid in list(self.bot.owner_guild_ids):
             self.bot.tree.remove_command("owner", guild=discord.Object(gid))
 

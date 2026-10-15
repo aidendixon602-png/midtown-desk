@@ -167,7 +167,7 @@ class DB:
         return self.one("SELECT * FROM tickets WHERE channel_id=? AND status='open'", (channel_id,))
 
     def open_tickets_for(self, guild_id: int, user_id: int):
-        return self.all("SELECT channel_id FROM tickets WHERE guild_id=? AND user_id=? AND status='open'",
+        return self.all("SELECT channel_id FROM tickets WHERE guild_id=? AND user_id=? AND status IN ('open','closing')",
                         (guild_id, user_id))
 
     # ---- blacklist ----

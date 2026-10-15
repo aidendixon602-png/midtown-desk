@@ -14,7 +14,7 @@ from discord.ext import commands
 
 from midtown import config
 from midtown.console import banner, setup_console_logging
-from midtown.tickets import load_open_channels
+from midtown.tickets import TicketCloseError, load_open_channels
 from midtown.utils import gatekeep, reply, report_error, utcnow
 
 
@@ -38,12 +38,14 @@ class MidtownTree(app_commands.CommandTree):
 
     async def on_error(self, inter: discord.Interaction, error: app_commands.AppCommandError):
         original = getattr(error, "original", error)
-        if isinstance(error, app_commands.CheckFailure):
-            return  # gatekeep / dev check already told the user
         if isinstance(error, app_commands.CommandOnCooldown):
             msg = f"Slow down! Try again in {error.retry_after:.0f}s."
         elif isinstance(error, app_commands.MissingPermissions):
             msg = "You don't have permission to use that."
+        elif isinstance(error, app_commands.CheckFailure):
+            return  # gatekeep / dev check already told the user
+        elif isinstance(original, TicketCloseError):
+            msg = str(original)
         elif isinstance(original, discord.Forbidden):
             msg = ("I'm missing permissions for that. Make sure my role has **Manage Channels** and "
                    "**Manage Roles**, and can see the channel.")
@@ -78,7 +80,12 @@ class MidtownBot(commands.AutoShardedBot):
         load_open_channels()
         for ext in config.EXTENSIONS:
             await self.load_extension(ext)
-        self.synced = await self.sync_commands()
+        try:
+            self.synced = await self.sync_commands()
+        except discord.HTTPException:
+            logging.getLogger("midtown").exception(
+                "Slash command sync failed. The bot will connect; retry with the owner prefix command "
+                "sync after checking Discord access and the applications.commands invite scope.")
 
     async def sync_commands(self) -> tuple[int, int]:
         """Sync public commands everywhere, and /owner in the owner's servers."""
@@ -97,7 +104,14 @@ def main():
         raise SystemExit("Missing DISCORD_TOKEN. Copy .env.example to .env and fill it in.")
     banner()
     setup_logging()
-    MidtownBot().run(config.TOKEN, log_handler=None)
+    try:
+        MidtownBot().run(config.TOKEN, log_handler=None)
+    except discord.PrivilegedIntentsRequired:
+        raise SystemExit("Enable Message Content Intent in Discord Developer Portal > Bot > "
+                         "Privileged Gateway Intents, then restart Midtown Desk.") from None
+    except discord.LoginFailure:
+        raise SystemExit("Discord rejected DISCORD_TOKEN. Set the bot token from Developer Portal > Bot "
+                         "in your host environment or .env, then restart.") from None
 
 
 if __name__ == "__main__":
