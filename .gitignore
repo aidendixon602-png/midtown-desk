@@ -1,0 +1,12 @@
+# Secrets - never commit these
+.env
+
+# Bot data (tickets, settings) - lives on the host, not in GitHub
+*.db
+*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
