@@ -8,16 +8,35 @@ from discord.ext import commands, tasks
 from midtown import config
 from midtown.database import db
 from midtown.console import ready_box
-from midtown.utils import all_owner_ids, log, needs_auth, send_bot_log, send_welcome, utcnow
+from midtown.utils import all_owner_ids, log, needs_auth, refresh_panels, send_bot_log, send_welcome, utcnow
 
 
 class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.status_loop.start()
+        self.panel_updates.start()
 
     def cog_unload(self):
         self.status_loop.cancel()
+        self.panel_updates.cancel()
+
+    @tasks.loop(minutes=1)
+    async def panel_updates(self):
+        for gid in db.pending_category_refreshes():
+            guild = self.bot.get_guild(gid)
+            if guild is None or guild.unavailable:
+                continue
+            try:
+                if await refresh_panels(guild):
+                    db.finish_category_refresh(gid)
+                    log.info("Updated support ticket menus in server %s", gid)
+            except Exception:
+                log.exception("Could not update support ticket menus in server %s; will retry", gid)
+
+    @panel_updates.before_loop
+    async def before_panel_updates(self):
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_ready(self):

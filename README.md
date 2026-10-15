@@ -5,7 +5,8 @@ and each server gets its own settings, ticket types and ticket history.
 
 ## Features
 
-- Ticket panel with a dropdown of ticket types (defaults included, fully customizable per server)
+- Ticket panel with General Support, Bug Report, Feature Request, Partnership and Other
+  (fully customizable per server)
 - Pop-up form so members explain their issue up front
 - Private ticket channels, **Claim** and **Close** buttons
 - HTML transcripts to the server's log channel and the member's DMs
@@ -129,6 +130,11 @@ python -m unittest discover -s tests -v
 Tests use in-memory SQLite and mocked Discord requests; they do not log in to Discord or
 modify the host database. GitHub Actions runs the same checks on Python 3.10, 3.12 and 3.13.
 See [CHANGELOG.md](CHANGELOG.md) for the complete reliability update.
+
+The 2.3.2 update replaces the old gaming categories for support communities such as Genre Intelligence.
+Existing servers using the complete, unchanged original default menu upgrade automatically when the bot
+loads the updated code. The bot refreshes already-posted dropdowns after connecting and retries failed
+edits every minute, including after a restart. Customized menus and historical tickets are preserved.
 
 ## Server authorization
 

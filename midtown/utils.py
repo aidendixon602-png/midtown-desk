@@ -178,17 +178,28 @@ def rating_view(ticket_id: int) -> discord.ui.View:
 
 
 async def refresh_panels(guild: discord.Guild):
+    complete = True
     for p in db.all("SELECT * FROM panels WHERE guild_id=?", (guild.id,)):
         channel = guild.get_channel(p["channel_id"])
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(p["channel_id"])
+            except discord.NotFound:
+                db.run("DELETE FROM panels WHERE message_id=?", (p["message_id"],))
+                continue
+            except discord.HTTPException:
+                complete = False
+                continue
         if not isinstance(channel, discord.TextChannel):
-            db.run("DELETE FROM panels WHERE message_id=?", (p["message_id"],))
+            complete = False
             continue
         try:
             await channel.get_partial_message(p["message_id"]).edit(view=panel_view(guild.id))
         except discord.NotFound:
             db.run("DELETE FROM panels WHERE message_id=?", (p["message_id"],))
         except discord.HTTPException:
-            pass
+            complete = False
+    return complete
 
 
 async def send_welcome(bot: discord.Client, guild: discord.Guild):

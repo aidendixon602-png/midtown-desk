@@ -32,7 +32,7 @@ BOT_NAME = os.getenv("BOT_NAME", "Midtown Desk")
 SUPPORT_URL = os.getenv("SUPPORT_URL") or None          # invite link to your support server (optional)
 
 DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
-VERSION = "2.3.1"
+VERSION = "2.3.2"
 
 # Feature modules loaded at startup (each file in cogs/)
 EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.owner", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports"]
@@ -53,8 +53,8 @@ PRIORITIES = {
 
 DEFAULT_CATEGORIES = [
     ("General Support", "🎫", "Questions or help with anything"),
-    ("Report a Player", "🚨", "Report someone breaking the rules"),
-    ("Appeal", "⚖️", "Appeal a ban, mute or warning"),
+    ("Bug Report", "🐛", "Report a problem or something that isn't working"),
+    ("Feature Request", "💡", "Suggest an improvement or a new feature"),
     ("Partnership", "🤝", "Partner or collab with the server"),
     ("Other", "❓", "Anything that doesn't fit above"),
 ]
