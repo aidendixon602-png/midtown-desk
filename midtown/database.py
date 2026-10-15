@@ -89,6 +89,16 @@ MIGRATIONS = {
 CONFIG_COLUMNS = {"staff_role_id", "category_id", "log_channel_id", "ticket_limit",
                   "autoclose_hours", "dm_transcripts", "ask_rating", "weekly_report"}
 
+# Frozen signature: migrate only the complete, unedited original gaming menu.
+LEGACY_CATEGORIES = [
+    ("General Support", "🎫", "Questions or help with anything"),
+    ("Report a Player", "🚨", "Report someone breaking the rules"),
+    ("Appeal", "⚖️", "Appeal a ban, mute or warning"),
+    ("Partnership", "🤝", "Partner or collab with the server"),
+    ("Other", "❓", "Anything that doesn't fit above"),
+]
+CATEGORY_REFRESH_PREFIX = "category_refresh:"
+
 
 class DB:
     def __init__(self, path: str):
@@ -106,6 +116,7 @@ class DB:
                 if col not in existing:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
         self.conn.commit()
+        self.migrate_default_categories()
 
     # ---- raw helpers ----
     def all(self, sql, args=()):
@@ -161,6 +172,28 @@ class DB:
                 "INSERT INTO categories(guild_id, name, emoji, description, position) VALUES(?,?,?,?,?)",
                 (guild_id, name, emoji, desc, i))
         self.conn.commit()
+
+    def migrate_default_categories(self):
+        """Upgrade untouched defaults in place and queue persistent panel refreshes."""
+        expected = [(*values, i) for i, values in enumerate(LEGACY_CATEGORIES)]
+        with self.conn:
+            for row in self.all("SELECT DISTINCT guild_id FROM categories"):
+                gid = row["guild_id"]
+                cats = self.categories(gid)
+                actual = [(c["name"], c["emoji"], c["description"], c["position"]) for c in cats]
+                if actual != expected:
+                    continue
+                for cat, values in zip(cats, config.DEFAULT_CATEGORIES):
+                    self.conn.execute("UPDATE categories SET name=?, emoji=?, description=? WHERE id=?", (*values, cat["id"]))
+                self.conn.execute("INSERT OR REPLACE INTO bot_state(key,value) VALUES(?,?)",
+                                  (f"{CATEGORY_REFRESH_PREFIX}{gid}", "1"))
+
+    def pending_category_refreshes(self) -> list[int]:
+        return [int(row["key"][len(CATEGORY_REFRESH_PREFIX):])
+                for row in self.all("SELECT key FROM bot_state WHERE key GLOB ?", (f"{CATEGORY_REFRESH_PREFIX}*",))]
+
+    def finish_category_refresh(self, guild_id: int):
+        self.set_state(f"{CATEGORY_REFRESH_PREFIX}{guild_id}", None)
 
     # ---- tickets ----
     def open_ticket(self, channel_id: int):

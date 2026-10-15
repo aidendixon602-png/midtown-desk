@@ -1,5 +1,22 @@
 # Midtown Desk changelog
 
+## 2.3.2 — Support menu for Genre Intelligence
+
+- Replaced the default **Report a Player** option with **Bug Report** and **Appeal** with
+  **Feature Request**, including matching icons and descriptions. General Support, Partnership
+  and Other remain available.
+- Existing complete, unedited gaming menus migrate automatically in the database when the new
+  code starts. Category IDs remain stable; customized menus and ticket history remain intact.
+- Already-posted dropdowns refresh automatically after connecting. Pending updates persist across
+  restarts and failed edits retry every minute, so no category-reset or panel-recreation commands
+  are required for unchanged default menus.
+- Panel refreshes fetch uncached channels and retain panel records after temporary/permission
+  failures. Confirmed deleted channels/messages are removed from the registry.
+- Added 13 offline tests for default categories, database migration, custom/history preservation,
+  persisted refresh work, posted menu contents and retry/cache behavior (49 total tests).
+- Updated the README and bot version. Changes take effect when the host loads the new GitHub code;
+  merging a commit cannot change an already-running process that has not updated.
+
 ## 2.3.1 — Reliability and interaction fixes
 
 This records the Midtown Desk changes in this update. Deployment requires merging the changes,
