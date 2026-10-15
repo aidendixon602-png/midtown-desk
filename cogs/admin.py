@@ -177,6 +177,7 @@ class Admin(commands.Cog):
         autoclose_hours="Close inactive tickets after this many hours (0 = off)",
         dm_transcripts="DM the user their transcript when a ticket closes",
         ask_rating="Ask users to rate the help after a ticket closes",
+        weekly_report="Post a weekly stats report in the log channel",
         staff_role="Change the staff role", log_channel="Change the log channel",
         category="Change the category tickets are created in")
     async def settings_cmd(self, inter: discord.Interaction,
@@ -184,6 +185,7 @@ class Admin(commands.Cog):
                            autoclose_hours: Optional[app_commands.Range[int, 0, 720]] = None,
                            dm_transcripts: Optional[bool] = None,
                            ask_rating: Optional[bool] = None,
+                           weekly_report: Optional[bool] = None,
                            staff_role: Optional[discord.Role] = None,
                            log_channel: Optional[discord.TextChannel] = None,
                            category: Optional[discord.CategoryChannel] = None):
@@ -193,6 +195,7 @@ class Admin(commands.Cog):
             autoclose_hours=autoclose_hours,
             dm_transcripts=None if dm_transcripts is None else int(dm_transcripts),
             ask_rating=None if ask_rating is None else int(ask_rating),
+            weekly_report=None if weekly_report is None else int(weekly_report),
             staff_role_id=staff_role.id if staff_role else None,
             log_channel_id=log_channel.id if log_channel else None,
             category_id=category.id if category else None)
@@ -206,6 +209,7 @@ class Admin(commands.Cog):
         e.add_field(name="Auto-close", value=f"{cfg['autoclose_hours']}h" if cfg["autoclose_hours"] else "Off")
         e.add_field(name="DM transcripts", value=on(cfg["dm_transcripts"]))
         e.add_field(name="Ratings", value=on(cfg["ask_rating"]))
+        e.add_field(name="Weekly report", value=on(cfg["weekly_report"]))
         await reply(inter, embed=e)
 
     # ---- /stats ----

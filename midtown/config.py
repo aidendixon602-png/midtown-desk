@@ -28,16 +28,24 @@ BOT_NAME = os.getenv("BOT_NAME", "Midtown Desk")
 SUPPORT_URL = os.getenv("SUPPORT_URL") or None          # invite link to your support server (optional)
 
 DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 # Feature modules loaded at startup (each file in cogs/)
-EXTENSIONS = ["cogs.events", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.dev"]
+EXTENSIONS = ["cogs.events", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports", "cogs.dev"]
 
 COLOR = 0x4F7CFF
 GREEN = 0x3BA55C
 RED = 0xED4245
 YELLOW = 0xFAA61A
 GREY = 0x2B2D31
+
+# Ticket priority levels: (label, channel name prefix, embed color)
+PRIORITIES = {
+    "urgent": ("🔴 Urgent", "🔴", 0xED4245),
+    "high": ("🟠 High", "🟠", 0xF57731),
+    "normal": ("⚪ Normal", "", 0x4F7CFF),
+    "low": ("🔵 Low", "🔵", 0x5DADEC),
+}
 
 DEFAULT_CATEGORIES = [
     ("General Support", "🎫", "Questions or help with anything"),

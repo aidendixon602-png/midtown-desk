@@ -24,10 +24,12 @@ class General(commands.Cog):
             "`/panel` — post another ticket menu in a channel\n"
             "`/category add/edit/remove/list/reset` — your own ticket types\n"
             "`/settings` — ticket limit, auto-close, transcripts, ratings\n"
-            "`/stats` — ticket stats and staff leaderboard"))
+            "`/stats` — all-time stats and staff leaderboard\n"
+            "`/report` — the last 7 days (also posted weekly in your log channel)"))
         e.add_field(name="Inside a ticket (staff)", inline=False, value=(
             "**Claim** / **Close** buttons\n"
             "`/ticket claim` · `unclaim` · `transfer` — who's handling it\n"
+            "`/ticket priority` — 🔴 urgent · 🟠 high · ⚪ normal · 🔵 low\n"
             "`/ticket add` · `remove` · `rename` · `close` · `closerequest`\n"
             "`/ticket history` — a member's past tickets\n"
             "`/ticket block` · `unblock` · `blocked` — stop someone opening tickets"))

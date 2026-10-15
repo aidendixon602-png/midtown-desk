@@ -37,6 +37,19 @@ def slugify(text: str) -> str:
     return s[:40] or "ticket"
 
 
+def strip_priority(channel_name: str) -> str:
+    """Remove a priority emoji prefix from a channel name."""
+    for _, prefix, _ in config.PRIORITIES.values():
+        if prefix and channel_name.startswith(prefix):
+            return channel_name[len(prefix):].lstrip("-")
+    return channel_name
+
+
+def with_priority(base_name: str, priority: str) -> str:
+    prefix = config.PRIORITIES.get(priority, config.PRIORITIES["normal"])[1]
+    return f"{prefix}-{base_name}"[:100] if prefix else base_name
+
+
 def valid_emoji(text: str) -> bool:
     if re.fullmatch(r"<a?:\w+:\d+>", text):
         return True

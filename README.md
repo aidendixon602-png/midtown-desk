@@ -13,6 +13,8 @@ and each server gets its own settings, ticket types and ticket history.
 - Open-ticket limit per member, spam cooldown, and auto-close for inactive tickets
 - Claim, unclaim and transfer tickets; close requests the member confirms
 - Ticket history per member and per-server ticket blocks
+- Ticket priority (🔴 urgent / 🟠 high / 🔵 low) shown in channel names
+- Weekly stats report in each server's log channel
 - Welcome message with setup steps when added to a new server
 - Developer tools: bot-wide stats, server list, blacklist, maintenance mode, broadcast, hot reload, backups
 
@@ -30,6 +32,7 @@ cogs/
   admin.py           /setup /panel /settings /stats /category
   tickets.py         Ticket buttons, /ticket, auto-close
   general.py         /help /ping /invite /about
+  reports.py         Weekly report, /report
   events.py          Server joins/leaves, status
   dev.py             /dev (developer only)
 ```
@@ -94,8 +97,9 @@ Use `/dev backup` regularly so you have a copy of your data.
 | `/setup` | One command does everything: checks permissions, creates a **Ticket Staff** role, a **Tickets** category, **#ticket-logs**, and **#open-a-ticket** with the ticket menu. Pick your own role or channels instead if you want. Safe to run again (reuses what exists) |
 | `/panel` | Post another ticket menu (custom title and text) |
 | `/category add / edit / remove / list / reset` | Your own ticket types. Panels update automatically |
-| `/settings` | Ticket limit, auto-close hours, DM transcripts, ratings |
-| `/stats` | Ticket stats and staff leaderboard |
+| `/settings` | Ticket limit, auto-close hours, DM transcripts, ratings, weekly report |
+| `/stats` | All-time ticket stats and staff leaderboard |
+| `/report` | Last 7 days: opened/closed with trend, avg close time, ratings, top staff, unclaimed tickets. Also posted automatically every week in the log channel (turn off with `/settings weekly_report:False`) |
 
 **Staff:**
 
@@ -103,6 +107,7 @@ Use `/dev backup` regularly so you have a copy of your data.
 |---|---|
 | Claim / Close buttons | In every ticket. The welcome message is pinned |
 | `/ticket claim` · `unclaim` · `transfer` | Take a ticket, release it, or hand it to another staff member |
+| `/ticket priority` | 🔴 Urgent (pings staff) · 🟠 High · ⚪ Normal · 🔵 Low. Adds the color to the channel name so it stands out |
 | `/ticket add` · `remove` · `rename` | Manage who's in the ticket and its name |
 | `/ticket close` | Close with an optional reason |
 | `/ticket closerequest` | Ask the member if they're done. They confirm with a button |

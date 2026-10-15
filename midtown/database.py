@@ -75,10 +75,13 @@ CREATE INDEX IF NOT EXISTS idx_categories_guild ON categories(guild_id);
 """
 
 # Columns added after v2.0. Existing databases get them automatically.
-MIGRATIONS = {"tickets": {"welcome_message_id": "INTEGER"}}
+MIGRATIONS = {
+    "tickets": {"welcome_message_id": "INTEGER", "priority": "TEXT DEFAULT 'normal'"},
+    "guilds": {"weekly_report": "INTEGER DEFAULT 1", "last_report_at": "TEXT"},
+}
 
 CONFIG_COLUMNS = {"staff_role_id", "category_id", "log_channel_id", "ticket_limit",
-                  "autoclose_hours", "dm_transcripts", "ask_rating"}
+                  "autoclose_hours", "dm_transcripts", "ask_rating", "weekly_report"}
 
 
 class DB:

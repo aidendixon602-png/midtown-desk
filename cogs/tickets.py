@@ -1,5 +1,6 @@
 """Ticket panel clicks, ticket buttons, /ticket commands and auto-close."""
 
+import asyncio
 import datetime as dt
 from typing import Optional
 
@@ -12,7 +13,12 @@ from midtown.database import db
 from midtown.tickets import (close_ticket, cooldown_left, create_ticket, mark_channel_gone, open_channels,
                              set_claim_button)
 from midtown.utils import (gatekeep, is_staff, log, panel_view, report_error, reply, send_guild_log, slugify,
+                           strip_priority, with_priority,
                            static_view, unix, utcnow)
+
+
+RENAME_LIMIT_MSG = ("⚠️ Discord only allows 2 channel renames every 10 minutes, so the channel name "
+                    "couldn't be updated right now. Try again in a few minutes.")
 
 
 class OpenTicketModal(discord.ui.Modal):
@@ -292,9 +298,49 @@ class Tickets(commands.Cog):
     async def ticket_rename(self, inter: discord.Interaction, name: app_commands.Range[str, 1, 90]):
         if not await self._require_ticket(inter):
             return
+        ticket = db.open_ticket(inter.channel_id)
         await inter.response.defer(ephemeral=True)
-        await inter.channel.edit(name=slugify(name))
-        await reply(inter, "✅ Renamed. (Discord allows 2 renames per 10 minutes.)")
+        if not await self._rename(inter.channel, with_priority(slugify(name), ticket["priority"] or "normal")):
+            return await reply(inter, RENAME_LIMIT_MSG)
+        await reply(inter, "✅ Renamed.")
+
+    async def _rename(self, channel: discord.TextChannel, name: str) -> bool:
+        """Rename without hanging: Discord only allows 2 channel renames per 10 minutes."""
+        if channel.name == name:
+            return True
+        try:
+            await asyncio.wait_for(channel.edit(name=name), timeout=8)
+            return True
+        except (asyncio.TimeoutError, discord.HTTPException):
+            return False
+
+    @ticket.command(name="priority", description="Set how urgent this ticket is")
+    @app_commands.describe(level="Urgent pings the staff role")
+    @app_commands.choices(level=[app_commands.Choice(name=label, value=key)
+                                 for key, (label, _, _) in config.PRIORITIES.items()])
+    async def ticket_priority(self, inter: discord.Interaction, level: app_commands.Choice[str]):
+        ticket = await self._require_ticket(inter)
+        if not ticket:
+            return
+        if (ticket["priority"] or "normal") == level.value:
+            return await reply(inter, f"This ticket is already **{level.name}**.")
+        await inter.response.defer(ephemeral=True)
+        db.run("UPDATE tickets SET priority=? WHERE id=?", (level.value, ticket["id"]))
+        renamed = await self._rename(inter.channel, with_priority(strip_priority(inter.channel.name), level.value))
+
+        label, _, color = config.PRIORITIES[level.value]
+        cfg = db.config(inter.guild_id)
+        staff = inter.guild.get_role(cfg["staff_role_id"]) if cfg["staff_role_id"] else None
+        ping = staff.mention if level.value == "urgent" and staff else None
+        await inter.channel.send(content=ping, embed=discord.Embed(
+            description=f"Priority set to **{label}** by {inter.user.mention}.", color=color),
+            allowed_mentions=discord.AllowedMentions(roles=True))
+        await reply(inter, "✅ Priority updated." + ("" if renamed else f"\n{RENAME_LIMIT_MSG}"))
+
+        le = discord.Embed(title=f"Ticket #{ticket['number']:04d} priority: {label}", color=color, timestamp=utcnow())
+        le.add_field(name="Channel", value=inter.channel.mention)
+        le.add_field(name="By", value=inter.user.mention)
+        await send_guild_log(inter.guild, le)
 
     @ticket.command(name="close", description="Close this ticket")
     async def ticket_close(self, inter: discord.Interaction, reason: Optional[app_commands.Range[str, 1, 300]] = None):
@@ -370,6 +416,9 @@ class Tickets(commands.Cog):
         for t in rows:
             where = f"<#{t['channel_id']}>" if t["status"] == "open" else f"#{t['number']:04d}"
             line = f"{status_icon.get(t['status'], '⚫')} {where} · {t['category']} · <t:{unix(t['opened_at'])}:R>"
+            prefix = config.PRIORITIES.get(t["priority"] or "normal", config.PRIORITIES["normal"])[1]
+            if prefix:
+                line += f" · {prefix}"
             if t["rating"]:
                 line += f" · {t['rating']}⭐"
             if t["subject"]:
