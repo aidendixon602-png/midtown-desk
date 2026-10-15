@@ -1,12 +1,14 @@
 """Bot-wide events: joining/leaving servers, blacklisted servers, status rotation."""
 
+import asyncio
+
 import discord
 from discord.ext import commands, tasks
 
 from midtown import config
 from midtown.database import db
 from midtown.console import ready_box
-from midtown.utils import log, needs_auth, send_bot_log, send_welcome, utcnow
+from midtown.utils import all_owner_ids, log, needs_auth, send_bot_log, send_welcome, utcnow
 
 
 class Events(commands.Cog):
@@ -28,6 +30,12 @@ class Events(commands.Cog):
                 await guild.leave()
 
     async def print_ready_summary(self):
+        auth = self.bot.get_cog("Auth")
+        if auth:  # wait until owner-owned servers are auto-approved
+            try:
+                await asyncio.wait_for(auth.owners_loaded.wait(), timeout=15)
+            except asyncio.TimeoutError:
+                pass
         guilds = self.bot.guilds
         try:
             info = await self.bot.application_info()
@@ -39,7 +47,7 @@ class Events(commands.Cog):
             ("Bot", f"{self.bot.user}"),
             ("Owner", owner),
             ("Servers", f"{len(guilds):,} · {sum(g.member_count or 0 for g in guilds):,} members"),
-            ("Commands", f"{public} slash" + (f" · {dev} dev" if dev else "") + f" · owner prefix {config.OWNER_PREFIX}"),
+            ("Commands", f"{public} slash · /owner in your servers · {config.OWNER_PREFIX}help"),
             ("Open tickets", str(db.one("SELECT COUNT(*) c FROM tickets WHERE status='open'")["c"])),
             ("Latency", f"{self.bot.latency * 1000:.0f}ms"),
         ]
@@ -48,8 +56,7 @@ class Events(commands.Cog):
             waiting = [g for g in guilds if needs_auth(g.id)]
             rows.insert(3, ("Authorized", f"{len(guilds) - len(waiting)} of {len(guilds)} servers"))
             if waiting:
-                warnings.append(f"{len(waiting)} server(s) waiting for approval: type "
-                                f"{config.OWNER_PREFIX}authorize in them, or {config.OWNER_PREFIX}servers")
+                warnings.append(f"{len(waiting)} server(s) waiting for approval: /owner servers")
         ready_box(rows, warnings)
 
     @commands.Cog.listener()
@@ -69,7 +76,7 @@ class Events(commands.Cog):
             await guild.leave()
             return
 
-        if needs_auth(guild.id):
+        if needs_auth(guild.id) and guild.owner_id not in all_owner_ids():
             return  # the Auth cog asks the owner to approve this server first
         await send_welcome(self.bot, guild)
 

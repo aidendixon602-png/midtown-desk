@@ -64,6 +64,10 @@ def is_dev(user: discord.abc.User) -> bool:
 OWNER_IDS: set[int] = set()
 
 
+def all_owner_ids() -> set[int]:
+    return OWNER_IDS | config.DEV_IDS
+
+
 def needs_auth(guild_id: int | None) -> bool:
     return bool(config.REQUIRE_AUTH and guild_id and not db.is_authorized(guild_id))
 

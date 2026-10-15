@@ -20,7 +20,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Developer setup
 DEV_IDS = _ids(os.getenv("DEV_IDS"))                    # your Discord user ID(s), comma separated
-DEV_GUILD_ID = _int(os.getenv("DEV_GUILD_ID"))          # your own server, where /dev commands show up
+DEV_GUILD_ID = _int(os.getenv("DEV_GUILD_ID"))          # optional: extra server for /owner (servers you own get it automatically)
 BOT_LOG_CHANNEL_ID = _int(os.getenv("BOT_LOG_CHANNEL_ID"))  # channel for joins, leaves and errors
 
 # Server authorization: when on, the bot only works in servers you approve
@@ -35,7 +35,7 @@ DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
 VERSION = "2.3.0"
 
 # Feature modules loaded at startup (each file in cogs/)
-EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.owner", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports", "cogs.dev"]
+EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.owner", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports"]
 
 COLOR = 0x4F7CFF
 GREEN = 0x3BA55C

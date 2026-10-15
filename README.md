@@ -17,7 +17,7 @@ and each server gets its own settings, ticket types and ticket history.
 - Weekly stats report in each server's log channel
 - Server authorization: only servers you approve can use it (approve from a DM)
 - Welcome message with setup steps when added to a new server
-- Developer tools: bot-wide stats, server list, blacklist, maintenance mode, broadcast, hot reload, backups
+- Owner tools (/owner): stats, server list, approvals, blocks, maintenance, broadcast, hot reload, backups
 
 ## Project layout
 
@@ -35,9 +35,8 @@ cogs/
   general.py         /help /ping /invite /about
   reports.py         Weekly report, /report
   auth.py            Server authorization (,authorize ...)
-  owner.py           ,help and other owner-only commands
+  owner.py           /owner commands (+ hidden ,help text commands)
   events.py          Server joins/leaves, status
-  dev.py             /dev (developer only)
 ```
 
 To add a feature, create a new file in `cogs/` and add it to `EXTENSIONS` in `midtown/config.py`.
@@ -58,8 +57,7 @@ Copy `.env.example` to `.env`:
 | Setting | What to put |
 |---|---|
 | `DISCORD_TOKEN` | Your bot token |
-| `DEV_IDS` | Your Discord user ID (Settings > Advanced > Developer Mode, then right-click your name > Copy User ID). Comma-separate teammates |
-| `DEV_GUILD_ID` | Your own server's ID. `/dev` commands only appear there |
+| `DEV_IDS` | Optional: teammates' user IDs who should also get owner commands (you're detected automatically) |
 | `BOT_LOG_CHANNEL_ID` | A private channel in your server for join/leave alerts and error reports |
 | `SUPPORT_URL` | Optional invite link to your support server |
 
@@ -87,38 +85,38 @@ They stay on Wispbyte.
 5. Start it. The console should say `Ready as Midtown Desk`.
 
 To update: push changes to GitHub, then restart the server (Auto Update pulls the new code).
-Use `/dev backup` regularly so you have a copy of your data.
+Use `/owner backup` regularly so you have a copy of your data.
 
 ## Server authorization
 
 By default the bot only works in servers **you approve** (turn this off with `REQUIRE_AUTH=false`).
 
-1. Someone adds the bot. Their server sees a "waiting for approval" message with its server ID.
-2. You get a **DM** with the server's name, size and owner, plus **Authorize** and **Deny & leave** buttons.
-3. Once authorized, the server gets the normal welcome message and can run `/setup`.
+1. Servers **you own** are approved automatically.
+2. When someone else adds the bot, their server sees a "waiting for approval" message with its server ID.
+3. You get a **DM** with the server's name, size and owner, plus **Authorize** and **Deny & leave** buttons.
+4. Once approved, the server gets the normal welcome message and can run `/setup`.
 
-Until then, every command in that server (except `/help`, `/about`, `/invite`, `/ping`) says the server isn't
-authorized. You're detected automatically as the owner of the bot in the Developer Portal.
+Until then, every command in that server (except `/help`, `/about`, `/invite`, `/ping`) says it isn't authorized.
+You're detected automatically as the owner of the bot in the Developer Portal.
 
-**Hidden owner commands** — type these in any channel the bot can see, or in a DM with the bot. Only you can
-use them; the bot ignores everyone else. Type **`,help`** to see them all in Discord.
+## Owner commands (`/owner`)
+
+These slash commands only appear in **servers you own** (detected automatically), so nobody else ever sees them,
+and they only work for you. The same commands also exist as hidden text commands (`,help`) for DMs.
 
 | Command | What it does |
 |---|---|
-| `,help` | The owner command menu |
-| `,authorize [id] [note]` | Approve this server, or any server by ID (even before they add the bot) |
-| `,revoke <id> [leave]` | Remove approval. Add `leave` to also make the bot leave |
-| `,servers` / `,list` | Every server the bot is in: ✅ approved or 🔒 waiting |
-| `,authorized` | Only the approved servers |
-| `,stats` · `,server <id>` | Bot-wide stats, or details on one server |
-| `,leave <id>` | Make the bot leave a server |
-| `,maintenance on/off` | Pause the bot for everyone except you |
-| `,status [text]` | Set the bot's status text |
-| `,block <user_id>` · `,unblock <user_id>` | Block someone from using the bot everywhere |
-| `,backup` | DMs you a copy of the database |
-| `,reload` · `,sync` | Reload code without restarting; push slash command changes |
-
-> **First time:** run `,authorize` in your own server so your members can use the bot there.
+| `/owner authorize [server_id] [note]` | Approve a server (empty = this one). Works before they've even added the bot |
+| `/owner revoke <server_id> [leave]` | Remove approval, optionally making the bot leave |
+| `/owner servers` · `/owner approved` | All servers (✅ approved / 🔒 waiting), or only approved ones |
+| `/owner stats` · `/owner server <id>` | Bot-wide stats, or details on one server |
+| `/owner leave <server_id> [block]` | Make the bot leave, optionally blocking that server for good |
+| `/owner maintenance` | Pause the bot for everyone except you |
+| `/owner status [text]` | Set the bot's status text |
+| `/owner block` · `unblock` · `blocked` | Block a user from using the bot everywhere |
+| `/owner broadcast` | Post an announcement in every server's ticket log channel |
+| `/owner backup` | DMs you a copy of the database |
+| `/owner reload` · `/owner sync` | Reload code without restarting; push slash command changes |
 
 ## Commands
 
@@ -149,21 +147,6 @@ use them; the bot ignores everyone else. Type **`,help`** to see them all in Dis
 | `/ticket block` · `unblock` · `blocked` | Stop a member from opening tickets in your server |
 
 Members can only open a new ticket once every 60 seconds, to stop spam.
-
-**Developers only** (your dev server, your user ID):
-
-| Command | What it does |
-|---|---|
-| `/dev stats` | Servers, members, tickets, latency, uptime, memory, DB size |
-| `/dev servers` · `/dev server` | List servers the bot is in, or details on one |
-| `/dev leave` | Make the bot leave a server (optionally blacklist it) |
-| `/dev blacklist add / remove / list` | Block a user or server from using the bot |
-| `/dev maintenance` | Pause the bot for everyone except developers |
-| `/dev status` | Set the bot's status text |
-| `/dev broadcast` | Post an announcement in every server's ticket log channel |
-| `/dev reload` · `/dev sync` | Reload code without restarting; push command changes to Discord |
-| `/dev backup` | Download a copy of the database |
-| `/dev shutdown` | Turn the bot off |
 
 Errors are logged to `logs/bot.log` and posted to your bot log channel with a short code that users also see,
 so you can match a user's report to the exact error.

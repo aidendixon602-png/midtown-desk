@@ -71,6 +71,7 @@ class MidtownBot(commands.AutoShardedBot):
         )
         self.started_at = utcnow()
         self.synced = (0, 0)
+        self.owner_guild_ids: set[int] = set()  # servers where /owner is registered
         self.announced_ready = False
 
     async def setup_hook(self):
@@ -80,11 +81,15 @@ class MidtownBot(commands.AutoShardedBot):
         self.synced = await self.sync_commands()
 
     async def sync_commands(self) -> tuple[int, int]:
+        """Sync public commands everywhere, and /owner in the owner's servers."""
         public = await self.tree.sync()
-        dev = []
-        if config.DEV_GUILD_ID:
-            dev = await self.tree.sync(guild=discord.Object(config.DEV_GUILD_ID))
-        return len(public), len(dev)
+        for gid in self.owner_guild_ids:
+            try:
+                await self.tree.sync(guild=discord.Object(gid))
+            except discord.HTTPException:
+                pass
+        self.synced = (len(public), len(self.owner_guild_ids))
+        return self.synced
 
 
 def main():
