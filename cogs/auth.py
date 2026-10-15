@@ -14,7 +14,7 @@ from discord.ext import commands
 from midtown import config
 from midtown.database import db
 from midtown.utils import (OWNER_IDS, all_owner_ids, first_writable_channel, is_dev, log, needs_auth,
-                           send_bot_log, send_welcome, static_view, utcnow)
+                           reply, report_error, send_bot_log, send_welcome, static_view, utcnow)
 
 
 def approval_buttons(guild_id: int) -> discord.ui.View:
@@ -41,7 +41,10 @@ class Auth(commands.Cog):
         self.owners_loaded = asyncio.Event()
 
     async def cog_load(self):
-        asyncio.create_task(self.load_owners())
+        self.owner_task = asyncio.create_task(self.load_owners())
+
+    def cog_unload(self):
+        self.owner_task.cancel()
 
     async def load_owners(self):
         await self.bot.wait_until_ready()
@@ -109,16 +112,24 @@ class Auth(commands.Cog):
             return
         if not is_dev(inter.user):
             return await inter.response.send_message("Only the bot owner can do that.", ephemeral=True)
-        _, _, gid, choice = cid.split(":")
+        parts = cid.split(":")
+        if len(parts) != 4 or not parts[2].isdigit() or parts[3] not in ("yes", "no"):
+            return await inter.response.send_message("Invalid approval button.", ephemeral=True)
+        _, _, gid, choice = parts
         guild = self.bot.get_guild(int(gid))
         if guild is None:
             return await inter.response.edit_message(content="I'm no longer in that server.", view=None)
-        if choice == "yes":
-            await self.approve(guild, inter.user)
-            await inter.response.edit_message(content=f"✅ Authorized **{guild.name}**.", view=None)
-        else:
-            await self.deny(guild)
-            await inter.response.edit_message(content=f"⛔ Denied and left **{guild.name}**.", view=None)
+        await inter.response.defer()
+        try:
+            if choice == "yes":
+                await self.approve(guild, inter.user)
+                await inter.edit_original_response(content=f"✅ Authorized **{guild.name}**.", view=None)
+            else:
+                await self.deny(guild)
+                await inter.edit_original_response(content=f"⛔ Denied and left **{guild.name}**.", view=None)
+        except Exception as error:
+            code = await report_error(self.bot, error, f"server approval for {gid}")
+            await reply(inter, f"Could not finish that approval action (error `{code}`). Please try again.")
 
     async def approve(self, guild: discord.Guild, by: discord.abc.User, note: str | None = None):
         db.blacklist_remove("guild", guild.id)

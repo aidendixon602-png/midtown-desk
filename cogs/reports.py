@@ -99,6 +99,7 @@ class Reports(commands.Cog):
                 await channel.send(embed=build_report(guild, now))
             except discord.HTTPException as e:
                 log.warning("Weekly report failed in %s: %s", guild.id, e)
+                continue  # retry next hour rather than losing this week's report
             db.run("UPDATE guilds SET last_report_at=? WHERE guild_id=?", (now.isoformat(), row["guild_id"]))
 
     @weekly.before_loop
@@ -108,6 +109,7 @@ class Reports(commands.Cog):
     @app_commands.command(name="report", description="See the last 7 days of ticket stats")
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.describe(public="Post it in this channel instead of just showing you")
     async def report_cmd(self, inter: discord.Interaction, public: bool = False):
         await reply(inter, embed=build_report(inter.guild), ephemeral=not public)

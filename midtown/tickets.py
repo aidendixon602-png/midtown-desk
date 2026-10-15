@@ -19,6 +19,10 @@ TICKET_COOLDOWN = 60
 _last_opened: dict[tuple[int, int], float] = {}
 
 
+class TicketCloseError(RuntimeError):
+    """A close that can be retried after correcting server configuration."""
+
+
 def cooldown_left(guild_id: int, user_id: int) -> int:
     left = TICKET_COOLDOWN - (time.monotonic() - _last_opened.get((guild_id, user_id), -TICKET_COOLDOWN))
     return int(left) + 1 if left > 0 else 0
@@ -90,9 +94,21 @@ async def create_ticket(inter: discord.Interaction, cat, subject: str, details: 
     if details:
         e.add_field(name="Details", value=details[:1024], inline=False)
     e.set_footer(text=config.BOT_NAME)
-    welcome = await channel.send(content=user.mention + (f" {staff.mention}" if staff else ""), embed=e,
-                                 view=ticket_controls(),
-                                 allowed_mentions=discord.AllowedMentions(users=True, roles=True))
+    try:
+        welcome = await channel.send(content=user.mention + (f" {staff.mention}" if staff else ""), embed=e,
+                                     view=ticket_controls(),
+                                     allowed_mentions=discord.AllowedMentions(users=True, roles=True))
+    except discord.HTTPException:
+        try:
+            await channel.delete(reason="Ticket welcome failed; rolling back creation")
+        except discord.HTTPException:
+            # Keep the channel tracked so slash commands can still manage it.
+            start_cooldown(guild.id, user.id)
+            log.exception("Ticket %s exists but its welcome message failed", channel.id)
+            return channel
+        db.run("DELETE FROM tickets WHERE channel_id=?", (channel.id,))
+        open_channels.discard(channel.id)
+        raise
     db.run("UPDATE tickets SET welcome_message_id=? WHERE channel_id=?", (welcome.id, channel.id))
     start_cooldown(guild.id, user.id)
     try:
@@ -114,27 +130,31 @@ async def close_ticket(bot: discord.Client, guild: discord.Guild, channel: disco
     # Lock so it can't be closed twice at the same time
     if db.run("UPDATE tickets SET status='closing' WHERE id=? AND status='open'", (ticket["id"],)).rowcount == 0:
         return False
+    try:
+        return await _finish_close(bot, guild, channel, ticket, closer, reason)
+    finally:
+        # Failed/cancelled closes remain usable and can be retried without restarting.
+        if db.run("UPDATE tickets SET status='open' WHERE id=? AND status='closing'",
+                  (ticket["id"],)).rowcount:
+            open_channels.add(channel.id)
+
+
+async def _finish_close(bot, guild, channel, ticket, closer, reason):
     open_channels.discard(channel.id)
     num = f"{ticket['number']:04d}"
 
     try:
         await channel.send(embed=discord.Embed(
-            description=f"🔒 **Ticket closed** by {closer.mention if closer else 'auto-close'}\n"
+            description=f"🔒 **Closing ticket** by {closer.mention if closer else 'auto-close'}\n"
                         f"**Reason:** {reason}\n\nSaving the transcript and deleting this channel in 5 seconds...",
             color=config.RED))
     except discord.HTTPException:
         pass
 
-    data, count = None, 0
-    try:
-        data, count = await build_transcript(channel, ticket, guild)
-    except discord.HTTPException as e:
-        log.warning("Transcript failed for ticket %s in %s: %s", num, guild.id, e)
+    # Keep the channel if history cannot be read; never delete the only transcript.
+    data, count = await build_transcript(channel, ticket, guild)
 
-    db.run("UPDATE tickets SET status='closed', closed_at=?, closed_by=?, close_reason=? WHERE id=?",
-           (utcnow().isoformat(), closer.id if closer else None, reason, ticket["id"]))
-
-    le = discord.Embed(title=f"🔒 Ticket #{num} closed", color=config.RED, timestamp=utcnow())
+    le = discord.Embed(title=f"🔒 Ticket #{num} closing", color=config.RED, timestamp=utcnow())
     le.add_field(name="Opened by", value=f"<@{ticket['user_id']}>")
     le.add_field(name="Type", value=ticket["category"] or "—")
     le.add_field(name="Claimed by", value=f"<@{ticket['claimed_by']}>" if ticket["claimed_by"] else "Nobody")
@@ -142,7 +162,7 @@ async def close_ticket(bot: discord.Client, guild: discord.Guild, channel: disco
     le.add_field(name="Opened", value=f"<t:{unix(ticket['opened_at'])}:R>")
     le.add_field(name="Messages", value=str(count))
     le.add_field(name="Reason", value=reason[:1024], inline=False)
-    await send_guild_log(guild, le, data, f"ticket-{num}.html")
+    archived = await send_guild_log(guild, le, data, f"ticket-{num}.html")
 
     cfg = db.config(guild.id)
     user = guild.get_member(ticket["user_id"])
@@ -151,26 +171,40 @@ async def close_ticket(bot: discord.Client, guild: discord.Guild, channel: disco
             user = await bot.fetch_user(ticket["user_id"])
         except discord.HTTPException:
             user = None
+    dm_message = None
     if user:
-        dm = discord.Embed(title=f"Your ticket in {guild.name} was closed",
+        dm = discord.Embed(title=f"Your ticket in {guild.name} is closing",
                            description=f"**Ticket:** #{num} ({ticket['category']})\n**Reason:** {reason}",
                            color=config.COLOR)
         kwargs = {"embed": dm}
         if data and cfg["dm_transcripts"]:
             dm.description += "\n\nYour transcript is attached."
             kwargs["file"] = discord.File(io.BytesIO(data), filename=f"ticket-{num}.html")
-        if cfg["ask_rating"]:
-            dm.add_field(name="How did we do?", value="Rate the help you got below.", inline=False)
-            kwargs["view"] = rating_view(ticket["id"])
         dm.set_footer(text=config.BOT_NAME)
         try:
-            await user.send(**kwargs)
+            dm_message = await user.send(**kwargs)
+            archived = archived or bool(data and cfg["dm_transcripts"])
         except discord.HTTPException:
             pass  # DMs closed
 
+    if not archived:
+        raise TicketCloseError("Transcript could not be delivered. The ticket remains open. "
+                               "Check the ticket log channel and Attach Files permission, then try again.")
     await asyncio.sleep(5)
     try:
         await channel.delete(reason=f"Ticket #{num} closed")
-    except discord.HTTPException:
-        pass
+    except discord.NotFound:
+        pass  # already deleted by a moderator
+    db.run("UPDATE tickets SET status='closed', closed_at=?, closed_by=?, close_reason=? WHERE id=?",
+           (utcnow().isoformat(), closer.id if closer else None, reason, ticket["id"]))
+    le.title = f"🔒 Ticket #{num} closed"
+    await send_guild_log(guild, le)
+    if dm_message:
+        dm.title = f"Your ticket in {guild.name} was closed"
+        if cfg["ask_rating"]:
+            dm.add_field(name="How did we do?", value="Rate the help you got below.", inline=False)
+        try:
+            await dm_message.edit(embed=dm, view=rating_view(ticket["id"]) if cfg["ask_rating"] else None)
+        except discord.HTTPException:
+            pass
     return True

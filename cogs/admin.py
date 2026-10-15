@@ -25,6 +25,11 @@ class Admin(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def interaction_check(self, inter: discord.Interaction) -> bool:
+        if not inter.guild or not inter.permissions.manage_guild:
+            raise app_commands.MissingPermissions(["manage_guild"])
+        return True
+
     # ---- /setup ----
 
     @app_commands.command(name="setup", description=f"Set up {config.BOT_NAME}: creates everything it needs")
@@ -62,6 +67,7 @@ class Admin(commands.Cog):
                 name="Ticket Staff", color=discord.Color(config.COLOR), mentionable=True,
                 reason=f"{config.BOT_NAME} setup by {inter.user}")
             created.append(f"Role {staff_role.mention}")
+        db.update_config(guild.id, staff_role_id=staff_role.id)
 
         if category is None:
             existing = guild.get_channel(cfg["category_id"]) if cfg["category_id"] else None
@@ -73,6 +79,7 @@ class Admin(commands.Cog):
                 guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True)},
                 reason=f"{config.BOT_NAME} setup")
             created.append(f"Category **{category.name}**")
+        db.update_config(guild.id, category_id=category.id)
 
         if log_channel is None:
             existing = guild.get_channel(cfg["log_channel_id"]) if cfg["log_channel_id"] else None
@@ -161,6 +168,7 @@ class Admin(commands.Cog):
         perms = channel.permissions_for(inter.guild.me)
         if not (perms.send_messages and perms.embed_links):
             return await reply(inter, f"I can't send messages or embeds in {channel.mention}.")
+        await inter.response.defer(ephemeral=True, thinking=True)
         msg = await channel.send(embed=panel_embed(title, description.replace("\\n", "\n")),
                                  view=panel_view(inter.guild_id))
         db.run("INSERT INTO panels(message_id, guild_id, channel_id) VALUES(?,?,?)",
@@ -189,6 +197,8 @@ class Admin(commands.Cog):
                            staff_role: Optional[discord.Role] = None,
                            log_channel: Optional[discord.TextChannel] = None,
                            category: Optional[discord.CategoryChannel] = None):
+        if staff_role and (staff_role.is_default() or staff_role.managed):
+            return await reply(inter, "Pick a real staff role (not @everyone or a bot's role).")
         changed = db.update_config(
             inter.guild_id,
             ticket_limit=ticket_limit,

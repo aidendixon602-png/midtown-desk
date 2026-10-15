@@ -3,6 +3,7 @@
 import asyncio
 import datetime as dt
 from typing import Optional
+from weakref import WeakValueDictionary
 
 import discord
 from discord import app_commands
@@ -10,11 +11,14 @@ from discord.ext import commands, tasks
 
 from midtown import config
 from midtown.database import db
-from midtown.tickets import (close_ticket, cooldown_left, create_ticket, mark_channel_gone, open_channels,
+from midtown.tickets import (TicketCloseError, close_ticket, cooldown_left, create_ticket, mark_channel_gone, open_channels,
                              set_claim_button)
 from midtown.utils import (gatekeep, is_staff, log, panel_view, report_error, reply, send_guild_log, slugify,
                            strip_priority, with_priority,
                            static_view, unix, utcnow)
+
+
+_opening: WeakValueDictionary = WeakValueDictionary()
 
 
 RENAME_LIMIT_MSG = ("⚠️ Discord only allows 2 channel renames every 10 minutes, so the channel name "
@@ -34,22 +38,43 @@ class OpenTicketModal(discord.ui.Modal):
         self.add_item(self.details)
 
     async def on_submit(self, inter: discord.Interaction):
-        cfg = db.config(inter.guild_id)
-        rows = db.open_tickets_for(inter.guild_id, inter.user.id)
-        if len(rows) >= cfg["ticket_limit"]:
-            links = ", ".join(f"<#{r['channel_id']}>" for r in rows)
-            return await reply(inter, f"You already have an open ticket: {links}")
-
+        if not inter.guild or not await gatekeep(inter):
+            return
         await inter.response.defer(ephemeral=True, thinking=True)
-        try:
-            channel = await create_ticket(inter, self.cat, str(self.subject.value), str(self.details.value))
-        except discord.Forbidden:
-            return await reply(inter, "I couldn't create your ticket because I'm missing permissions. "
-                                      "Please tell a staff member to run `/setup` again.")
-        except discord.HTTPException as e:
-            return await reply(inter, f"Couldn't create your ticket: {e.text or e}")
+        key = (inter.guild_id, inter.user.id)
+        lock = _opening.setdefault(key, asyncio.Lock())
+        async with lock:
+            if not await gatekeep(inter):
+                return
+            cfg = db.config(inter.guild_id)
+            staff = inter.guild.get_role(cfg["staff_role_id"])
+            if not staff or staff.is_default() or staff.managed:
+                return await reply(inter, "Tickets aren't set up correctly. Ask an admin to run `/setup`.")
+            cat = db.one("SELECT * FROM categories WHERE id=? AND guild_id=?",
+                         (self.cat["id"], inter.guild_id))
+            if not cat:
+                return await reply(inter, "That ticket type was removed. Please pick another.")
+            if db.guild_block(inter.guild_id, inter.user.id):
+                return await reply(inter, "You've been blocked from opening tickets in this server.")
+            wait = cooldown_left(inter.guild_id, inter.user.id)
+            if wait:
+                return await reply(inter, f"Please wait {wait}s before opening another ticket.")
+            rows = db.open_tickets_for(inter.guild_id, inter.user.id)
+            if len(rows) >= cfg["ticket_limit"]:
+                links = ", ".join(f"<#{r['channel_id']}>" for r in rows)
+                return await reply(inter, f"You already have an open ticket: {links}")
+            try:
+                channel = await create_ticket(inter, cat, str(self.subject.value), str(self.details.value))
+            except discord.Forbidden:
+                return await reply(inter, "I couldn't create your ticket because I'm missing permissions. "
+                                          "Please tell a staff member to run `/setup` again.")
+            except discord.HTTPException:
+                return await reply(inter, "Discord couldn't finish creating your ticket. Please try again.")
 
-        await reply(inter, f"✅ Your ticket is open: {channel.mention}")
+        row = db.open_ticket(channel.id)
+        warning = ("\nThe welcome buttons could not be posted. Staff can use `/ticket` commands in the channel."
+                   if row and not row["welcome_message_id"] else "")
+        await reply(inter, f"✅ Your ticket is open: {channel.mention}{warning}")
         if self.panel_message:  # reset the dropdown so the same option can be picked again
             try:
                 await self.panel_message.edit(view=panel_view(inter.guild_id))
@@ -66,12 +91,22 @@ class CloseModal(discord.ui.Modal, title="Close ticket"):
                                   placeholder="e.g. Issue resolved")
 
     async def on_submit(self, inter: discord.Interaction):
+        if not inter.guild or not await gatekeep(inter):
+            return
         ticket = db.open_ticket(inter.channel_id)
         if not ticket:
             return await reply(inter, "This ticket is already closed.")
+        if inter.user.id != ticket["user_id"] and not is_staff(inter.user, db.config(inter.guild_id)):
+            return await reply(inter, "Only staff or the ticket owner can close this.")
         await reply(inter, "Closing ticket...")
         await close_ticket(inter.client, inter.guild, inter.channel, ticket, inter.user,
                            str(self.reason.value) or "No reason given")
+
+    async def on_error(self, inter: discord.Interaction, error: Exception):
+        if isinstance(error, TicketCloseError):
+            return await reply(inter, str(error))
+        code = await report_error(inter.client, error, f"close ticket modal in {inter.guild_id}")
+        await reply(inter, f"The ticket could not be closed (error `{code}`). It remains open; please try again.")
 
 
 class Tickets(commands.Cog):
@@ -91,7 +126,8 @@ class Tickets(commands.Cog):
         if inter.type != discord.InteractionType.component:
             return
         cid = (inter.data or {}).get("custom_id", "")
-        if not cid.startswith("md:") or not await gatekeep(inter):
+        if not (cid in {"md:open", "md:claim", "md:close", "md:creq:yes", "md:creq:no"}
+                or cid.startswith("md:rate:")) or not await gatekeep(inter):
             return
         try:
             if cid == "md:open":
@@ -104,6 +140,8 @@ class Tickets(commands.Cog):
                 await self.handle_rate(inter, cid)
             elif cid in ("md:creq:yes", "md:creq:no"):
                 await self.handle_close_request(inter, accepted=cid.endswith("yes"))
+        except TicketCloseError as error:
+            await reply(inter, str(error))
         except Exception as error:
             code = await report_error(self.bot, error, f"button `{cid}` in {inter.guild_id}")
             try:
@@ -150,7 +188,11 @@ class Tickets(commands.Cog):
     async def set_claim(self, inter: discord.Interaction, ticket, member: discord.Member | None):
         """Claim (member), transfer (member, already claimed) or unclaim (None) a ticket."""
         previous = ticket["claimed_by"]
-        db.run("UPDATE tickets SET claimed_by=? WHERE id=?", (member.id if member else None, ticket["id"]))
+        changed = db.run("UPDATE tickets SET claimed_by=? WHERE id=? AND status='open' AND claimed_by IS ?",
+                         (member.id if member else None, ticket["id"], previous)).rowcount
+        if not changed:
+            await reply(inter, "This ticket changed while you were acting. Please try again.")
+            return False
         await set_claim_button(inter.channel, ticket, member.display_name if member else None)
 
         if member is None:
@@ -170,6 +212,7 @@ class Tickets(commands.Cog):
         le.add_field(name="By", value=inter.user.mention)
         le.add_field(name="Channel", value=inter.channel.mention)
         await send_guild_log(inter.guild, le)
+        return True
 
     async def handle_close_request(self, inter: discord.Interaction, accepted: bool):
         ticket = db.open_ticket(inter.channel_id)
@@ -196,14 +239,22 @@ class Tickets(commands.Cog):
         await inter.response.send_modal(CloseModal())
 
     async def handle_rate(self, inter: discord.Interaction, cid: str):
-        _, _, tid, n = cid.split(":")
+        parts = cid.split(":")
+        if len(parts) != 4 or not parts[2].isdigit() or parts[3] not in {"1", "2", "3", "4", "5"}:
+            return await reply(inter, "Invalid rating button.")
+        _, _, tid, n = parts
         ticket = db.one("SELECT * FROM tickets WHERE id=?", (int(tid),))
         if not ticket or ticket["user_id"] != inter.user.id:
             return await reply(inter, "This rating isn't yours to give.")
+        if ticket["status"] != "closed":
+            return await reply(inter, "Please wait until the ticket is fully closed before rating it.")
         if ticket["rating"]:
             return await inter.response.edit_message(view=None)
         stars = int(n)
-        db.run("UPDATE tickets SET rating=? WHERE id=?", (stars, ticket["id"]))
+        changed = db.run("UPDATE tickets SET rating=? WHERE id=? AND rating IS NULL AND status='closed'",
+                         (stars, ticket["id"])).rowcount
+        if not changed:
+            return await inter.response.edit_message(view=None)
         await inter.response.edit_message(
             content=f"Thanks for your feedback! You rated us {'⭐' * stars} ({stars}/5).", view=None)
         guild = self.bot.get_guild(ticket["guild_id"])
@@ -237,11 +288,18 @@ class Tickets(commands.Cog):
                       "WHERE t.status='open' AND g.autoclose_hours > 0")
         for t in rows:
             guild = self.bot.get_guild(t["guild_id"])
-            if guild is None:
+            if guild is None or guild.unavailable:
                 continue  # bot left that server or it's unavailable
             channel = guild.get_channel(t["channel_id"])
+            if channel is None:
+                try:
+                    channel = await guild.fetch_channel(t["channel_id"])
+                except discord.NotFound:
+                    mark_channel_gone(t["channel_id"])
+                    continue
+                except discord.HTTPException:
+                    continue
             if not isinstance(channel, discord.TextChannel):
-                mark_channel_gone(t["channel_id"])
                 continue
             idle = utcnow() - dt.datetime.fromisoformat(t["last_activity"])
             limit = dt.timedelta(hours=t["autoclose_hours"])
@@ -253,8 +311,8 @@ class Tickets(commands.Cog):
                     db.run("UPDATE tickets SET warned=1 WHERE id=?", (t["id"],))
                 elif t["warned"] and idle >= limit + dt.timedelta(hours=1):
                     await close_ticket(self.bot, guild, channel, t, None, "Closed automatically for inactivity")
-            except discord.HTTPException as e:
-                log.warning("Auto-close error on ticket %s: %s", t["id"], e)
+            except Exception:
+                log.exception("Auto-close error on ticket %s", t["id"])
 
     @autoclose.before_loop
     async def before_autoclose(self):
@@ -278,6 +336,7 @@ class Tickets(commands.Cog):
     async def ticket_add(self, inter: discord.Interaction, user: discord.Member):
         if not await self._require_ticket(inter):
             return
+        await inter.response.defer(ephemeral=False)
         await inter.channel.set_permissions(user, view_channel=True, send_messages=True, read_message_history=True,
                                             attach_files=True, embed_links=True)
         await reply(inter, embed=discord.Embed(description=f"➕ Added {user.mention} to the ticket.",
@@ -290,6 +349,7 @@ class Tickets(commands.Cog):
             return
         if user.id == ticket["user_id"]:
             return await reply(inter, "You can't remove the person who opened the ticket.")
+        await inter.response.defer(ephemeral=False)
         await inter.channel.set_permissions(user, overwrite=None)
         await reply(inter, embed=discord.Embed(description=f"➖ Removed {user.mention} from the ticket.",
                                                color=config.RED), ephemeral=False)
@@ -357,8 +417,9 @@ class Tickets(commands.Cog):
             return
         if ticket["claimed_by"]:
             return await reply(inter, f"Already claimed by <@{ticket['claimed_by']}>. Use `/ticket transfer` instead.")
-        await reply(inter, "✅ Claimed.")
-        await self.set_claim(inter, ticket, inter.user)
+        await inter.response.defer(ephemeral=True)
+        if await self.set_claim(inter, ticket, inter.user):
+            await reply(inter, "✅ Claimed.")
 
     @ticket.command(name="unclaim", description="Release this ticket so another staff member can take it")
     async def ticket_unclaim(self, inter: discord.Interaction):
@@ -369,8 +430,9 @@ class Tickets(commands.Cog):
             return await reply(inter, "Nobody has claimed this ticket.")
         if ticket["claimed_by"] != inter.user.id and not inter.user.guild_permissions.manage_guild:
             return await reply(inter, "Only the staff member who claimed it (or an admin) can unclaim it.")
-        await reply(inter, "✅ Unclaimed.")
-        await self.set_claim(inter, ticket, None)
+        await inter.response.defer(ephemeral=True)
+        if await self.set_claim(inter, ticket, None):
+            await reply(inter, "✅ Unclaimed.")
 
     @ticket.command(name="transfer", description="Hand this ticket to another staff member")
     @app_commands.describe(staff="Who should take over")
@@ -382,8 +444,9 @@ class Tickets(commands.Cog):
             return await reply(inter, f"{staff.mention} isn't on the staff team.")
         if ticket["claimed_by"] == staff.id:
             return await reply(inter, f"{staff.mention} already has this ticket.")
-        await reply(inter, f"✅ Transferred to {staff.mention}.")
-        await self.set_claim(inter, ticket, staff)
+        await inter.response.defer(ephemeral=True)
+        if await self.set_claim(inter, ticket, staff):
+            await reply(inter, f"✅ Transferred to {staff.mention}.")
 
     @ticket.command(name="closerequest", description="Ask the member if their issue is solved and the ticket can close")
     @app_commands.describe(note="Optional message to the member")
