@@ -13,6 +13,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from midtown import config
+from midtown.console import banner, setup_console_logging
 from midtown.tickets import load_open_channels
 from midtown.utils import gatekeep, reply, report_error, utcnow
 
@@ -21,14 +22,14 @@ def setup_logging():
     os.makedirs("logs", exist_ok=True)
     fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
     file_handler = RotatingFileHandler("logs/bot.log", maxBytes=5_000_000, backupCount=3, encoding="utf-8")
-    console = logging.StreamHandler()
-    for handler in (file_handler, console):
-        handler.setFormatter(fmt)
+    file_handler.setFormatter(fmt)  # full timestamps in the log file
+    console = setup_console_logging()  # short, colored lines in the host console
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(file_handler)
     root.addHandler(console)
     logging.getLogger("discord.http").setLevel(logging.WARNING)
+    logging.getLogger("discord.client").setLevel(logging.WARNING)
 
 
 class MidtownTree(app_commands.CommandTree):
@@ -69,13 +70,14 @@ class MidtownBot(commands.AutoShardedBot):
             activity=discord.Activity(type=discord.ActivityType.watching, name="/help"),
         )
         self.started_at = utcnow()
+        self.synced = (0, 0)
+        self.announced_ready = False
 
     async def setup_hook(self):
         load_open_channels()
         for ext in config.EXTENSIONS:
             await self.load_extension(ext)
-        public, dev = await self.sync_commands()
-        logging.getLogger("midtown").info("Synced %d public and %d dev commands", public, dev)
+        self.synced = await self.sync_commands()
 
     async def sync_commands(self) -> tuple[int, int]:
         public = await self.tree.sync()
@@ -88,6 +90,7 @@ class MidtownBot(commands.AutoShardedBot):
 def main():
     if not config.TOKEN:
         raise SystemExit("Missing DISCORD_TOKEN. Copy .env.example to .env and fill it in.")
+    banner()
     setup_logging()
     MidtownBot().run(config.TOKEN, log_handler=None)
 

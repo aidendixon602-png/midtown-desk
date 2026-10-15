@@ -54,12 +54,7 @@ class Auth(commands.Cog):
             OWNER_IDS.update(m.id for m in info.team.members)
         else:
             OWNER_IDS.add(info.owner.id)
-        log.info("Bot owners: %s", ", ".join(map(str, OWNER_IDS)))
-        if config.REQUIRE_AUTH:
-            pending = [g for g in self.bot.guilds if not db.is_authorized(g.id)]
-            if pending:
-                log.warning("%d server(s) are waiting for approval. Use %sservers to see them.",
-                            len(pending), config.OWNER_PREFIX)
+        log.debug("Bot owners: %s", ", ".join(map(str, OWNER_IDS)))
 
     async def owners(self) -> list[discord.User]:
         users = []

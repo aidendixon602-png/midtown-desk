@@ -5,6 +5,7 @@ from discord.ext import commands, tasks
 
 from midtown import config
 from midtown.database import db
+from midtown.console import ready_box
 from midtown.utils import log, needs_auth, send_bot_log, send_welcome, utcnow
 
 
@@ -18,11 +19,38 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        log.info("Ready as %s in %d servers", self.bot.user, len(self.bot.guilds))
+        if not self.bot.announced_ready:
+            self.bot.announced_ready = True
+            await self.print_ready_summary()
         # Leave any servers that were blacklisted while the bot was offline
         for guild in self.bot.guilds:
             if db.blacklisted("guild", guild.id):
                 await guild.leave()
+
+    async def print_ready_summary(self):
+        guilds = self.bot.guilds
+        try:
+            info = await self.bot.application_info()
+            owner = ", ".join(m.name for m in info.team.members) if info.team else info.owner.name
+        except discord.HTTPException:
+            owner = "unknown"
+        public, dev = self.bot.synced
+        rows = [
+            ("Bot", f"{self.bot.user}"),
+            ("Owner", owner),
+            ("Servers", f"{len(guilds):,} · {sum(g.member_count or 0 for g in guilds):,} members"),
+            ("Commands", f"{public} slash" + (f" · {dev} dev" if dev else "") + f" · owner prefix {config.OWNER_PREFIX}"),
+            ("Open tickets", str(db.one("SELECT COUNT(*) c FROM tickets WHERE status='open'")["c"])),
+            ("Latency", f"{self.bot.latency * 1000:.0f}ms"),
+        ]
+        warnings = []
+        if config.REQUIRE_AUTH:
+            waiting = [g for g in guilds if needs_auth(g.id)]
+            rows.insert(3, ("Authorized", f"{len(guilds) - len(waiting)} of {len(guilds)} servers"))
+            if waiting:
+                warnings.append(f"{len(waiting)} server(s) waiting for approval: type "
+                                f"{config.OWNER_PREFIX}authorize in them, or {config.OWNER_PREFIX}servers")
+        ready_box(rows, warnings)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):

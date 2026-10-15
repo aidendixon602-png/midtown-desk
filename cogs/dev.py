@@ -252,7 +252,7 @@ class Dev(commands.Cog):
 
     async def cog_load(self):
         if not config.DEV_GUILD_ID:
-            log.warning("DEV_GUILD_ID isn't set, so /dev commands are turned off.")
+            log.debug("DEV_GUILD_ID isn't set, so /dev commands are off (optional).")
             return
         if not config.DEV_IDS:
             log.warning("DEV_IDS isn't set, so nobody can use /dev commands.")
