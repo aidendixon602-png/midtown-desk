@@ -3,11 +3,11 @@ Server authorization: the bot only works in servers the owner approves.
 
 - When someone adds the bot, the server sees a "waiting for approval" message and the
   owner gets a DM with Authorize / Deny buttons.
-- Hidden owner-only text commands (prefix md! by default, or @mention the bot):
-    md!authorize [server_id] [note]   approve a server (no ID = the server you're in)
-    md!revoke <server_id> [leave]     remove approval (add "leave" to also make the bot leave)
-    md!servers                        every server the bot is in, with its status
-    md!authorized                     approved servers
+- Hidden owner-only text commands (prefix , by default, or @mention the bot):
+    ,authorize [server_id] [note]   approve a server (no ID = the server you're in)
+    ,revoke <server_id> [leave]     remove approval (add "leave" to also make the bot leave)
+    ,servers                        every server the bot is in, with its status
+    ,authorized                     approved servers
 Only you (the Discord application owner, or anyone in DEV_IDS) can use them. Everyone else gets no reply.
 """
 

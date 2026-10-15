@@ -34,7 +34,7 @@ cogs/
   tickets.py         Ticket buttons, /ticket, auto-close
   general.py         /help /ping /invite /about
   reports.py         Weekly report, /report
-  auth.py            Server authorization, md! owner commands
+  auth.py            Server authorization + owner commands (prefix ,)
   events.py          Server joins/leaves, status
   dev.py             /dev (developer only)
 ```
@@ -104,13 +104,13 @@ can see or use them, and the bot ignores anyone else who tries:
 
 | Command | What it does |
 |---|---|
-| `md!authorize` | Approve the server you're in |
-| `md!authorize <server_id> [note]` | Approve a server by ID (works before they've even added the bot) |
-| `md!revoke <server_id>` | Remove approval. Add `leave` at the end to also make the bot leave |
-| `md!servers` | Every server the bot is in: ✅ approved or 🔒 waiting |
-| `md!authorized` | All approved servers |
+| `,authorize` | Approve the server you're in |
+| `,authorize <server_id> [note]` | Approve a server by ID (works before they've even added the bot) |
+| `,revoke <server_id>` | Remove approval. Add `leave` at the end to also make the bot leave |
+| `,servers` | Every server the bot is in: ✅ approved or 🔒 waiting |
+| `,authorized` | All approved servers |
 
-> **First time:** run `md!authorize` in your own server so your members can use the bot there.
+> **First time:** run `,authorize` in your own server so your members can use the bot there.
 
 ## Commands
 

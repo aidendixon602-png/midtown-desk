@@ -25,7 +25,7 @@ BOT_LOG_CHANNEL_ID = _int(os.getenv("BOT_LOG_CHANNEL_ID"))  # channel for joins,
 
 # Server authorization: when on, the bot only works in servers you approve
 REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").strip().lower() not in ("0", "false", "no", "off")
-OWNER_PREFIX = os.getenv("OWNER_PREFIX", "md!")         # prefix for hidden owner-only commands
+OWNER_PREFIX = os.getenv("OWNER_PREFIX", ",")         # prefix for hidden owner-only commands
 
 # Branding / links
 BOT_NAME = os.getenv("BOT_NAME", "Midtown Desk")
