@@ -5,17 +5,7 @@ from discord.ext import commands, tasks
 
 from midtown import config
 from midtown.database import db
-from midtown.utils import link_buttons, log, send_bot_log, utcnow
-
-
-def first_writable_channel(guild: discord.Guild) -> discord.TextChannel | None:
-    if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
-        return guild.system_channel
-    for channel in guild.text_channels:
-        perms = channel.permissions_for(guild.me)
-        if perms.send_messages and perms.embed_links:
-            return channel
-    return None
+from midtown.utils import log, needs_auth, send_bot_log, send_welcome, utcnow
 
 
 class Events(commands.Cog):
@@ -51,19 +41,9 @@ class Events(commands.Cog):
             await guild.leave()
             return
 
-        channel = first_writable_channel(guild)
-        if channel:
-            welcome = discord.Embed(
-                title=f"👋 Thanks for adding {config.BOT_NAME}!", color=config.COLOR,
-                description="Get tickets running in under a minute:\n\n"
-                            "**1.** `/setup` — creates the staff role, channels and ticket menu for you\n"
-                            "**2.** Give the **Ticket Staff** role to your staff\n"
-                            "**3.** `/category` — customize the ticket types (optional)\n\n"
-                            "Type `/help` any time to see every command.")
-            try:
-                await channel.send(embed=welcome, view=link_buttons(self.bot))
-            except discord.HTTPException:
-                pass
+        if needs_auth(guild.id):
+            return  # the Auth cog asks the owner to approve this server first
+        await send_welcome(self.bot, guild)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):

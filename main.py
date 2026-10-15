@@ -61,7 +61,7 @@ class MidtownBot(commands.AutoShardedBot):
         intents = discord.Intents.default()
         intents.message_content = True  # needed for ticket transcripts
         super().__init__(
-            command_prefix=commands.when_mentioned,
+            command_prefix=commands.when_mentioned_or(config.OWNER_PREFIX),
             intents=intents,
             help_command=None,
             tree_cls=MidtownTree,

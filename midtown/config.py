@@ -23,15 +23,19 @@ DEV_IDS = _ids(os.getenv("DEV_IDS"))                    # your Discord user ID(s
 DEV_GUILD_ID = _int(os.getenv("DEV_GUILD_ID"))          # your own server, where /dev commands show up
 BOT_LOG_CHANNEL_ID = _int(os.getenv("BOT_LOG_CHANNEL_ID"))  # channel for joins, leaves and errors
 
+# Server authorization: when on, the bot only works in servers you approve
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").strip().lower() not in ("0", "false", "no", "off")
+OWNER_PREFIX = os.getenv("OWNER_PREFIX", "md!")         # prefix for hidden owner-only commands
+
 # Branding / links
 BOT_NAME = os.getenv("BOT_NAME", "Midtown Desk")
 SUPPORT_URL = os.getenv("SUPPORT_URL") or None          # invite link to your support server (optional)
 
 DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 
 # Feature modules loaded at startup (each file in cogs/)
-EXTENSIONS = ["cogs.events", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports", "cogs.dev"]
+EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports", "cogs.dev"]
 
 COLOR = 0x4F7CFF
 GREEN = 0x3BA55C

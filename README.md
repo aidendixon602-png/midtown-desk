@@ -15,6 +15,7 @@ and each server gets its own settings, ticket types and ticket history.
 - Ticket history per member and per-server ticket blocks
 - Ticket priority (🔴 urgent / 🟠 high / 🔵 low) shown in channel names
 - Weekly stats report in each server's log channel
+- Server authorization: only servers you approve can use it (approve from a DM)
 - Welcome message with setup steps when added to a new server
 - Developer tools: bot-wide stats, server list, blacklist, maintenance mode, broadcast, hot reload, backups
 
@@ -33,6 +34,7 @@ cogs/
   tickets.py         Ticket buttons, /ticket, auto-close
   general.py         /help /ping /invite /about
   reports.py         Weekly report, /report
+  auth.py            Server authorization, md! owner commands
   events.py          Server joins/leaves, status
   dev.py             /dev (developer only)
 ```
@@ -85,6 +87,30 @@ They stay on Wispbyte.
 
 To update: push changes to GitHub, then restart the server (Auto Update pulls the new code).
 Use `/dev backup` regularly so you have a copy of your data.
+
+## Server authorization
+
+By default the bot only works in servers **you approve** (turn this off with `REQUIRE_AUTH=false`).
+
+1. Someone adds the bot. Their server sees a "waiting for approval" message with its server ID.
+2. You get a **DM** with the server's name, size and owner, plus **Authorize** and **Deny & leave** buttons.
+3. Once authorized, the server gets the normal welcome message and can run `/setup`.
+
+Until then, every command in that server (except `/help`, `/about`, `/invite`, `/ping`) says the server isn't
+authorized. You're detected automatically as the owner of the bot in the Developer Portal.
+
+**Hidden owner commands** — type these in any channel the bot can see, or in a DM with the bot. Nobody else
+can see or use them, and the bot ignores anyone else who tries:
+
+| Command | What it does |
+|---|---|
+| `md!authorize` | Approve the server you're in |
+| `md!authorize <server_id> [note]` | Approve a server by ID (works before they've even added the bot) |
+| `md!revoke <server_id>` | Remove approval. Add `leave` at the end to also make the bot leave |
+| `md!servers` | Every server the bot is in: ✅ approved or 🔒 waiting |
+| `md!authorized` | All approved servers |
+
+> **First time:** run `md!authorize` in your own server so your members can use the bot there.
 
 ## Commands
 

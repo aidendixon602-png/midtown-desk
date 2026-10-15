@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS guild_blocks (
     added_at   TEXT,
     PRIMARY KEY (guild_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS authorized_guilds (
+    guild_id       INTEGER PRIMARY KEY,
+    authorized_by  INTEGER,
+    authorized_at  TEXT,
+    note           TEXT
+);
 CREATE TABLE IF NOT EXISTS bot_state (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -191,6 +197,20 @@ class DB:
 
     def guild_blocks(self, guild_id: int):
         return self.all("SELECT * FROM guild_blocks WHERE guild_id=? ORDER BY added_at DESC", (guild_id,))
+
+    # ---- server authorization ----
+    def is_authorized(self, guild_id: int) -> bool:
+        return self.one("SELECT 1 FROM authorized_guilds WHERE guild_id=?", (guild_id,)) is not None
+
+    def authorize(self, guild_id: int, by: int, note: str | None = None):
+        self.run("INSERT OR REPLACE INTO authorized_guilds(guild_id, authorized_by, authorized_at, note) VALUES(?,?,?,?)",
+                 (guild_id, by, dt.datetime.now(dt.timezone.utc).isoformat(), note))
+
+    def deauthorize(self, guild_id: int) -> bool:
+        return self.run("DELETE FROM authorized_guilds WHERE guild_id=?", (guild_id,)).rowcount > 0
+
+    def authorized_all(self):
+        return self.all("SELECT * FROM authorized_guilds ORDER BY authorized_at DESC")
 
     # ---- bot-wide state (maintenance mode, custom status) ----
     def get_state(self, key: str, default: str | None = None) -> str | None:

@@ -57,7 +57,25 @@ def valid_emoji(text: str) -> bool:
 
 
 def is_dev(user: discord.abc.User) -> bool:
-    return user.id in config.DEV_IDS
+    return user.id in config.DEV_IDS or user.id in OWNER_IDS
+
+
+# Filled in at startup from the Discord application (you, or your team's members)
+OWNER_IDS: set[int] = set()
+
+
+def needs_auth(guild_id: int | None) -> bool:
+    return bool(config.REQUIRE_AUTH and guild_id and not db.is_authorized(guild_id))
+
+
+def first_writable_channel(guild: discord.Guild) -> discord.TextChannel | None:
+    if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
+        return guild.system_channel
+    for channel in guild.text_channels:
+        perms = channel.permissions_for(guild.me)
+        if perms.send_messages and perms.embed_links:
+            return channel
+    return None
 
 
 def is_staff(member: discord.Member, cfg) -> bool:
@@ -167,6 +185,23 @@ async def refresh_panels(guild: discord.Guild):
             pass
 
 
+async def send_welcome(bot: discord.Client, guild: discord.Guild):
+    channel = first_writable_channel(guild)
+    if not channel:
+        return
+    welcome = discord.Embed(
+        title=f"👋 Thanks for adding {config.BOT_NAME}!", color=config.COLOR,
+        description="Get tickets running in under a minute:\n\n"
+                    "**1.** `/setup` — creates the staff role, channels and ticket menu for you\n"
+                    "**2.** Give the **Ticket Staff** role to your staff\n"
+                    "**3.** `/category` — customize the ticket types (optional)\n\n"
+                    "Type `/help` any time to see every command.")
+    try:
+        await channel.send(embed=welcome, view=link_buttons(bot))
+    except discord.HTTPException:
+        pass
+
+
 # ---- logging ----------------------------------------------------------------------------
 
 async def send_guild_log(guild: discord.Guild, e: discord.Embed, data: bytes | None = None,
@@ -211,6 +246,14 @@ async def report_error(bot: discord.Client, error: BaseException, where: str) ->
 
 # ---- global gate: blacklist + maintenance mode ------------------------------------------
 
+ALWAYS_ALLOWED_COMMANDS = {"help", "about", "invite", "ping"}
+
+
+def _always_allowed(inter: discord.Interaction) -> bool:
+    command = inter.command
+    return command is not None and command.qualified_name in ALWAYS_ALLOWED_COMMANDS
+
+
 async def gatekeep(inter: discord.Interaction) -> bool:
     """Returns False (and tells the user why) if they shouldn't use the bot right now."""
     if is_dev(inter.user):
@@ -220,6 +263,9 @@ async def gatekeep(inter: discord.Interaction) -> bool:
         reason = f"⛔ You're blocked from using {config.BOT_NAME}."
     elif inter.guild_id and db.blacklisted("guild", inter.guild_id):
         reason = f"⛔ {config.BOT_NAME} is disabled in this server."
+    elif needs_auth(inter.guild_id) and not _always_allowed(inter):
+        reason = (f"🔒 This server isn't authorized to use {config.BOT_NAME} yet.\n"
+                  f"Ask the bot owner to approve it. Server ID: `{inter.guild_id}`")
     elif db.get_state("maintenance") == "1":
         reason = f"🛠️ {config.BOT_NAME} is under maintenance. Please try again soon."
     if reason is None:
