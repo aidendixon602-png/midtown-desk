@@ -20,8 +20,8 @@ class General(commands.Cog):
         e = discord.Embed(title=f"🎫 {config.BOT_NAME} — Help", color=config.COLOR,
                           description="A ticket system for your server: members open private tickets, staff help them.")
         e.add_field(name="Getting started (admins)", inline=False, value=(
-            "`/setup` — pick your staff role (creates a Tickets category + log channel)\n"
-            "`/panel` — post the ticket menu in a channel\n"
+            "`/setup` — creates the staff role, channels and ticket menu in one go\n"
+            "`/panel` — post another ticket menu in a channel\n"
             "`/category add/edit/remove/list/reset` — your own ticket types\n"
             "`/settings` — ticket limit, auto-close, transcripts, ratings\n"
             "`/stats` — ticket stats and staff leaderboard"))

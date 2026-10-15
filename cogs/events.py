@@ -56,8 +56,8 @@ class Events(commands.Cog):
             welcome = discord.Embed(
                 title=f"👋 Thanks for adding {config.BOT_NAME}!", color=config.COLOR,
                 description="Get tickets running in under a minute:\n\n"
-                            "**1.** `/setup` — choose your staff role\n"
-                            "**2.** `/panel` — post the ticket menu where members can see it\n"
+                            "**1.** `/setup` — creates the staff role, channels and ticket menu for you\n"
+                            "**2.** Give the **Ticket Staff** role to your staff\n"
                             "**3.** `/category` — customize the ticket types (optional)\n\n"
                             "Type `/help` any time to see every command.")
             try:

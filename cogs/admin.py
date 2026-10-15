@@ -27,14 +27,17 @@ class Admin(commands.Cog):
 
     # ---- /setup ----
 
-    @app_commands.command(name="setup", description=f"Set up {config.BOT_NAME} for this server")
+    @app_commands.command(name="setup", description=f"Set up {config.BOT_NAME}: creates everything it needs")
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.describe(
-        staff_role="Role that can see and handle tickets",
+        staff_role="Your staff role (leave empty and I'll create a 'Ticket Staff' role)",
+        panel_channel="Where members open tickets (leave empty and I'll create #open-a-ticket)",
         category="Category for ticket channels (leave empty and I'll create one)",
         log_channel="Channel for logs + transcripts (leave empty and I'll create one)")
-    async def setup_cmd(self, inter: discord.Interaction, staff_role: discord.Role,
+    async def setup_cmd(self, inter: discord.Interaction,
+                        staff_role: Optional[discord.Role] = None,
+                        panel_channel: Optional[discord.TextChannel] = None,
                         category: Optional[discord.CategoryChannel] = None,
                         log_channel: Optional[discord.TextChannel] = None):
         guild = inter.guild
@@ -44,35 +47,100 @@ class Admin(commands.Cog):
                 title="⚠️ I'm missing permissions",
                 description="Give my role these permissions, then run `/setup` again:\n• " + "\n• ".join(missing),
                 color=config.RED))
-        if staff_role.is_default() or staff_role.managed:
+        if staff_role and (staff_role.is_default() or staff_role.managed):
             return await reply(inter, "Pick a real staff role (not @everyone or a bot's role).")
 
         await inter.response.defer(ephemeral=True, thinking=True)
-        hidden = discord.PermissionOverwrite(view_channel=False)
+        cfg = db.config(guild.id)
+        created = []  # what this run made, for the summary
+
+        # Reuse what a previous /setup made if it still exists, so running it again never makes duplicates
+        if staff_role is None:
+            staff_role = guild.get_role(cfg["staff_role_id"]) if cfg["staff_role_id"] else None
+        if staff_role is None:
+            staff_role = await guild.create_role(
+                name="Ticket Staff", color=discord.Color(config.COLOR), mentionable=True,
+                reason=f"{config.BOT_NAME} setup by {inter.user}")
+            created.append(f"Role {staff_role.mention}")
+
+        if category is None:
+            existing = guild.get_channel(cfg["category_id"]) if cfg["category_id"] else None
+            category = existing if isinstance(existing, discord.CategoryChannel) else None
         if category is None:
             category = await guild.create_category("Tickets", overwrites={
-                guild.default_role: hidden,
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
                 staff_role: discord.PermissionOverwrite(view_channel=True),
-                guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True)})
+                guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True)},
+                reason=f"{config.BOT_NAME} setup")
+            created.append(f"Category **{category.name}**")
+
+        if log_channel is None:
+            existing = guild.get_channel(cfg["log_channel_id"]) if cfg["log_channel_id"] else None
+            log_channel = existing if isinstance(existing, discord.TextChannel) else None
         if log_channel is None:
             log_channel = await guild.create_text_channel("ticket-logs", category=category, overwrites={
-                guild.default_role: hidden,
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
                 staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=False),
                 guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True,
-                                                      embed_links=True)})
+                                                      embed_links=True)},
+                reason=f"{config.BOT_NAME} setup")
+            created.append(f"Channel {log_channel.mention}")
 
         db.update_config(guild.id, staff_role_id=staff_role.id, category_id=category.id, log_channel_id=log_channel.id)
         if not db.categories(guild.id):
             db.seed_categories(guild.id)
 
-        e = discord.Embed(title=f"✅ {config.BOT_NAME} is set up", color=config.GREEN)
+        # Ticket menu: post one unless a panel already exists (or a channel was picked)
+        panel_msg = None
+        has_panel = await self._has_live_panel(guild)
+        if panel_channel is not None or not has_panel:
+            if panel_channel is None:
+                panel_channel = await guild.create_text_channel("open-a-ticket", position=0, overwrites={
+                    guild.default_role: discord.PermissionOverwrite(view_channel=True, send_messages=False,
+                                                                    add_reactions=False, create_public_threads=False),
+                    guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, embed_links=True)},
+                    reason=f"{config.BOT_NAME} setup")
+                created.append(f"Channel {panel_channel.mention}")
+            perms = panel_channel.permissions_for(guild.me)
+            if perms.send_messages and perms.embed_links:
+                panel_msg = await panel_channel.send(
+                    embed=panel_embed("Support Tickets", "Need help? Pick a ticket type from the menu below and "
+                                                         "a staff member will be with you shortly."),
+                    view=panel_view(guild.id))
+                db.run("INSERT INTO panels(message_id, guild_id, channel_id) VALUES(?,?,?)",
+                       (panel_msg.id, guild.id, panel_channel.id))
+
+        e = discord.Embed(title=f"✅ {config.BOT_NAME} is ready", color=config.GREEN)
         e.add_field(name="Staff role", value=staff_role.mention)
         e.add_field(name="Ticket category", value=category.name)
         e.add_field(name="Log channel", value=log_channel.mention)
-        e.add_field(name="Next step", inline=False,
-                    value="Run **/panel** in the channel where members should open tickets.\n"
-                          "Customize ticket types with **/category**, and limits with **/settings**.")
+        if panel_msg:
+            e.add_field(name="Ticket menu", value=f"[Posted in {panel_channel.mention}]({panel_msg.jump_url})")
+        elif panel_channel is not None:
+            e.add_field(name="Ticket menu", value=f"⚠️ I can't post in {panel_channel.mention}. Check my permissions there.")
+        else:
+            e.add_field(name="Ticket menu", value="Already posted (use `/panel` to post another)")
+        if created:
+            e.add_field(name="Created", value="\n".join(created), inline=False)
+        e.add_field(name="Next steps", inline=False,
+                    value=f"• Give {staff_role.mention} to your staff so they can see and answer tickets\n"
+                          "• Customize ticket types with **/category** and limits with **/settings**")
         await reply(inter, embed=e)
+
+    async def _has_live_panel(self, guild: discord.Guild) -> bool:
+        for p in db.all("SELECT * FROM panels WHERE guild_id=?", (guild.id,)):
+            channel = guild.get_channel(p["channel_id"])
+            if not isinstance(channel, discord.TextChannel):
+                db.run("DELETE FROM panels WHERE message_id=?", (p["message_id"],))
+                continue
+            try:
+                await channel.fetch_message(p["message_id"])
+                return True
+            except discord.NotFound:
+                db.run("DELETE FROM panels WHERE message_id=?", (p["message_id"],))
+            except discord.HTTPException:
+                return True  # can't check right now; assume it's there rather than posting a duplicate
+        return False
 
     # ---- /panel ----
 

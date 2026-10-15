@@ -89,8 +89,8 @@ Use `/dev backup` regularly so you have a copy of your data.
 
 | Command | What it does |
 |---|---|
-| `/setup` | Pick the staff role (creates a Tickets category + log channel, or pick your own). Checks the bot's permissions |
-| `/panel` | Post the ticket menu (custom title and text) |
+| `/setup` | One command does everything: checks permissions, creates a **Ticket Staff** role, a **Tickets** category, **#ticket-logs**, and **#open-a-ticket** with the ticket menu. Pick your own role or channels instead if you want. Safe to run again (reuses what exists) |
+| `/panel` | Post another ticket menu (custom title and text) |
 | `/category add / edit / remove / list / reset` | Your own ticket types. Panels update automatically |
 | `/settings` | Ticket limit, auto-close hours, DM transcripts, ratings |
 | `/stats` | Ticket stats and staff leaderboard |
