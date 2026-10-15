@@ -34,7 +34,8 @@ cogs/
   tickets.py         Ticket buttons, /ticket, auto-close
   general.py         /help /ping /invite /about
   reports.py         Weekly report, /report
-  auth.py            Server authorization + owner commands (prefix ,)
+  auth.py            Server authorization (,authorize ...)
+  owner.py           ,help and other owner-only commands
   events.py          Server joins/leaves, status
   dev.py             /dev (developer only)
 ```
@@ -99,16 +100,23 @@ By default the bot only works in servers **you approve** (turn this off with `RE
 Until then, every command in that server (except `/help`, `/about`, `/invite`, `/ping`) says the server isn't
 authorized. You're detected automatically as the owner of the bot in the Developer Portal.
 
-**Hidden owner commands** — type these in any channel the bot can see, or in a DM with the bot. Nobody else
-can see or use them, and the bot ignores anyone else who tries:
+**Hidden owner commands** — type these in any channel the bot can see, or in a DM with the bot. Only you can
+use them; the bot ignores everyone else. Type **`,help`** to see them all in Discord.
 
 | Command | What it does |
 |---|---|
-| `,authorize` | Approve the server you're in |
-| `,authorize <server_id> [note]` | Approve a server by ID (works before they've even added the bot) |
-| `,revoke <server_id>` | Remove approval. Add `leave` at the end to also make the bot leave |
-| `,servers` | Every server the bot is in: ✅ approved or 🔒 waiting |
-| `,authorized` | All approved servers |
+| `,help` | The owner command menu |
+| `,authorize [id] [note]` | Approve this server, or any server by ID (even before they add the bot) |
+| `,revoke <id> [leave]` | Remove approval. Add `leave` to also make the bot leave |
+| `,servers` / `,list` | Every server the bot is in: ✅ approved or 🔒 waiting |
+| `,authorized` | Only the approved servers |
+| `,stats` · `,server <id>` | Bot-wide stats, or details on one server |
+| `,leave <id>` | Make the bot leave a server |
+| `,maintenance on/off` | Pause the bot for everyone except you |
+| `,status [text]` | Set the bot's status text |
+| `,block <user_id>` · `,unblock <user_id>` | Block someone from using the bot everywhere |
+| `,backup` | DMs you a copy of the database |
+| `,reload` · `,sync` | Reload code without restarting; push slash command changes |
 
 > **First time:** run `,authorize` in your own server so your members can use the bot there.
 

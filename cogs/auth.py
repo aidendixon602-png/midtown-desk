@@ -168,7 +168,7 @@ class Auth(commands.Cog):
             msg += f" Left **{guild.name}**."
         await ctx.reply(msg)
 
-    @commands.command(name="servers")
+    @commands.command(name="servers", aliases=["list"])
     async def servers_cmd(self, ctx: commands.Context):
         guilds = sorted(self.bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
         lines = [f"{'✅' if db.is_authorized(g.id) else '🔒'} **{discord.utils.escape_markdown(g.name[:40])}** "

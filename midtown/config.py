@@ -35,7 +35,7 @@ DB_PATH = os.getenv("DB_PATH", "data/midtown_desk.db")
 VERSION = "2.3.0"
 
 # Feature modules loaded at startup (each file in cogs/)
-EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports", "cogs.dev"]
+EXTENSIONS = ["cogs.events", "cogs.auth", "cogs.owner", "cogs.general", "cogs.admin", "cogs.tickets", "cogs.reports", "cogs.dev"]
 
 COLOR = 0x4F7CFF
 GREEN = 0x3BA55C
