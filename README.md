@@ -1,105 +1,125 @@
 # Midtown Desk
 
-A ticket bot for Discord, written in Python (discord.py), with built-in AI from **Claude** and **ChatGPT**.
+A multi-server ticket bot for Discord, written in Python (discord.py). Any server can add it,
+and each server gets its own settings, ticket types and ticket history.
+
+## Features
+
+- Ticket panel with a dropdown of ticket types (defaults included, fully customizable per server)
+- Pop-up form so members explain their issue up front
+- Private ticket channels, **Claim** and **Close** buttons
+- HTML transcripts to the server's log channel and the member's DMs
+- 1–5 star ratings and a staff leaderboard
+- Open-ticket limit per member and auto-close for inactive tickets
+- Welcome message with setup steps when added to a new server
+- Developer tools: bot-wide stats, server list, blacklist, maintenance mode, broadcast, hot reload, backups
+
+## Project layout
+
+```
+main.py              Starts the bot
+midtown/
+  config.py          Settings from .env
+  database.py        SQLite storage (per-server data)
+  utils.py           Shared helpers, permission checks, error reporting
+  tickets.py         Opening and closing tickets
+  transcripts.py     HTML transcripts
+cogs/
+  admin.py           /setup /panel /settings /stats /category
+  tickets.py         Ticket buttons, /ticket, auto-close
+  general.py         /help /ping /invite /about
+  events.py          Server joins/leaves, status
+  dev.py             /dev (developer only)
+```
+
+To add a feature, create a new file in `cogs/` and add it to `EXTENSIONS` in `midtown/config.py`.
 
 ## 1. Create the bot
 
 1. Go to https://discord.com/developers/applications and click **New Application**. Name it **Midtown Desk**.
-2. Open the **Bot** tab, click **Reset Token**, and copy the token.
-3. On the same page, turn on **Message Content Intent** (needed for transcripts and AI).
-4. Open **OAuth2 > URL Generator**. Tick `bot` and `applications.commands`, then under permissions tick **Administrator**
-   (or at minimum: Manage Channels, Manage Roles, View Channels, Send Messages, Embed Links, Attach Files,
-   Read Message History, Manage Messages). Open the link and add the bot to your server.
-5. In Server Settings > Roles, drag the bot's role **above** your staff role.
+2. **Bot** tab: click **Reset Token** and copy it. Turn on **Message Content Intent** (needed for transcripts).
+   Leave **Public Bot** on so other servers can add it.
+3. **Installation** tab (or OAuth2 > URL Generator): scopes `bot` + `applications.commands`, with these permissions:
+   View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Channels,
+   Manage Roles, Manage Messages, Use External Emojis. Once the bot is running, `/invite` gives you this link.
 
-## 2. Get AI keys (optional)
+## 2. Fill in `.env`
 
-Add one or both. If you add both, the bot uses your preferred one and switches to the other if it fails.
+Copy `.env.example` to `.env`:
 
-- **Claude:** https://console.anthropic.com > API Keys
-- **ChatGPT:** https://platform.openai.com > API keys
+| Setting | What to put |
+|---|---|
+| `DISCORD_TOKEN` | Your bot token |
+| `DEV_IDS` | Your Discord user ID (Settings > Advanced > Developer Mode, then right-click your name > Copy User ID). Comma-separate teammates |
+| `DEV_GUILD_ID` | Your own server's ID. `/dev` commands only appear there |
+| `BOT_LOG_CHANNEL_ID` | A private channel in your server for join/leave alerts and error reports |
+| `SUPPORT_URL` | Optional invite link to your support server |
 
-These are **pay-as-you-go** and billed separately from Claude Pro / ChatGPT Plus subscriptions.
-Add a small amount of credit and set a monthly spending limit in each dashboard.
+## 3. Run it
 
-## 3. Run it on your computer (for testing)
-
-You need Python 3.10 or newer.
+Python 3.10+:
 
 ```
 pip install -r requirements.txt
-```
-
-Copy `.env.example` to `.env` and fill in your token and keys, then:
-
-```
-python bot.py
+python main.py
 ```
 
 ## 4. Host it on Wispbyte with GitHub
 
-The code lives in your **private** GitHub repo. Your secrets (`.env`) and data (`midtown_desk.db`) are **never**
-uploaded to GitHub. They only live on Wispbyte.
+The code lives in GitHub. Your `.env`, database (`data/`) and logs (`logs/`) are never uploaded there.
+They stay on Wispbyte.
 
 1. Create a Python server on Wispbyte.
-2. **Get the code onto it.** In the server's **Startup** tab, look for a "Git Repo Address" (or similar) option:
-   - **If it has one:** set it to `https://github.com/aidendixon602-png/midtown-desk`. Since the repo is private,
-     also fill in your GitHub username and a **token** (GitHub > Settings > Developer settings > Fine-grained tokens >
-     only this repo, *Contents: Read-only*). Turn on **Auto Update** so it pulls the latest code on every restart.
-   - **If it doesn't:** download the repo as a ZIP from GitHub and upload the files in the **File Manager**.
-3. Set the startup file to `bot.py` and the requirements file to `requirements.txt`.
-4. In the **File Manager**, create a file named `.env` and paste in your filled-in `.env.example`.
-5. Start the server. The console should say `Logged in as Midtown Desk`.
+2. In the **Startup** tab, if there's a "Git Repo Address" option, set it to
+   `https://github.com/aidendixon602-png/midtown-desk`, add your GitHub username and a read-only token
+   (GitHub > Settings > Developer settings > Fine-grained tokens > this repo only, *Contents: Read-only*),
+   and turn on **Auto Update**. Otherwise, upload the files with the **File Manager**.
+3. Set the startup file to **`main.py`** and the requirements file to `requirements.txt`.
+4. Create `.env` in the File Manager and paste in your settings.
+5. Start it. The console should say `Ready as Midtown Desk`.
 
-**Making changes:** edit the code on GitHub (or have Claude push the change), then **restart** the server on Wispbyte.
-With Auto Update on, it pulls the new code automatically.
-
-**Before you rely on it**, check on your plan that: files persist across restarts (or you'll lose ticket data),
-the bot can reach the internet (needed for the AI), and Python 3.10+ is available.
-
-## 5. Set it up in Discord
-
-1. `/setup staff_role:@Staff` — creates a Tickets category and a private ticket-logs channel (or pick your own).
-2. `/panel` in the channel where members should open tickets.
-3. `/ai info` — paste your rules, FAQs and links so the AI gives accurate, server-specific answers.
+To update: push changes to GitHub, then restart the server (Auto Update pulls the new code).
+Use `/dev backup` regularly so you have a copy of your data.
 
 ## Commands
 
+**Everyone:** `/help` · `/ping` · `/invite` · `/about`
+
+**Server admins** (need Manage Server):
+
 | Command | What it does |
 |---|---|
-| `/setup` | Pick the staff role, ticket category and log channel |
-| `/panel` | Post the ticket panel (custom title and text supported) |
-| `/category add / edit / remove / list / reset` | Make your own dropdown options. Panels update automatically |
-| `/settings` | Tickets per user, auto-close hours, DM transcripts, ratings |
-| `/stats` | Totals, average rating, staff leaderboard |
-| `/ticket add / remove / rename / close` | Manage the ticket you're in |
-| `/ask` | Ask the AI anything. Pick Claude or ChatGPT, or use the server default |
-| `/ai settings` | Preferred AI, turn each AI feature on/off, `/ask` cooldown |
-| `/ai info` | Teach the AI about your server |
+| `/setup` | Pick the staff role (creates a Tickets category + log channel, or pick your own). Checks the bot's permissions |
+| `/panel` | Post the ticket menu (custom title and text) |
+| `/category add / edit / remove / list / reset` | Your own ticket types. Panels update automatically |
+| `/settings` | Ticket limit, auto-close hours, DM transcripts, ratings |
+| `/stats` | Ticket stats and staff leaderboard |
 
-Inside each ticket there are **Claim**, **Close** and (with AI) **Suggest reply** buttons.
+**Staff in a ticket:** Claim / Close buttons, `/ticket add` · `/ticket remove` · `/ticket rename` · `/ticket close`
 
-## AI features
+**Developers only** (your dev server, your user ID):
 
-- **Quick answer:** when a ticket opens, the AI posts a helpful first reply while members wait for staff.
-- **Close summary:** a short AI summary is added to the log next to the transcript.
-- **Suggest reply:** staff-only button that drafts a reply privately for staff to edit and send.
-- **`/ask`:** members can ask questions, with a cooldown so nobody runs up your bill. Staff skip the cooldown.
-- **Automatic fallback:** if Claude or ChatGPT is down or out of credit, the other one answers.
+| Command | What it does |
+|---|---|
+| `/dev stats` | Servers, members, tickets, latency, uptime, memory, DB size |
+| `/dev servers` · `/dev server` | List servers the bot is in, or details on one |
+| `/dev leave` | Make the bot leave a server (optionally blacklist it) |
+| `/dev blacklist add / remove / list` | Block a user or server from using the bot |
+| `/dev maintenance` | Pause the bot for everyone except developers |
+| `/dev status` | Set the bot's status text |
+| `/dev broadcast` | Post an announcement in every server's ticket log channel |
+| `/dev reload` · `/dev sync` | Reload code without restarting; push command changes to Discord |
+| `/dev backup` | Download a copy of the database |
+| `/dev shutdown` | Turn the bot off |
 
-The AI never decides bans, appeals or punishments. It's told to leave those to staff.
+Errors are logged to `logs/bot.log` and posted to your bot log channel with a short code that users also see,
+so you can match a user's report to the exact error.
 
-**Privacy:** AI features send ticket messages to Anthropic and/or OpenAI. Mention this in your server rules.
-Turn off any feature you don't want with `/ai settings`.
+## Growing past 75 servers
 
-**Models:** defaults are `claude-haiku-5-5` and `gpt-5.4-mini` (fast and cheap). Change `CLAUDE_MODEL` /
-`OPENAI_MODEL` in `.env` to use a different one, using the model ID exactly as it appears in that provider's docs.
-`/ai settings` shows which models are active.
+Discord requires **bot verification** once a bot reaches 100 servers. Apply from the Developer Portal when you're
+around 75 servers. Message Content is a privileged intent: request it during verification and explain it's used to
+save ticket transcripts. Without it, transcripts in new servers will be empty.
 
-## How tickets work
-
-- Member picks a type from the dropdown, fills in a short form, and gets a private channel with staff.
-- Staff hit **Claim** to take it. Everyone sees who's handling it.
-- On close, an HTML transcript goes to the log channel and the member's DMs, and the member can rate 1–5 stars.
-- Tickets with no messages for 48 hours (change with `/settings`) get a warning, then close an hour later.
-- Data is saved in `midtown_desk.db` next to the bot. Keep that file if you move hosts.
+Settings and ticket history are kept when the bot is removed from a server, so everything still works if they add
+it back.
